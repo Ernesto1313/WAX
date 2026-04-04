@@ -1,0 +1,121 @@
+package com.example.wax.presentation.settings
+
+import android.content.Context
+import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import com.example.wax.core.auth.TokenManager
+import com.example.wax.core.preferences.UserPreferencesRepository
+import com.example.wax.core.work.WeeklyAlbumWorker
+import com.example.wax.domain.model.TurntableSkin
+import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import java.util.concurrent.TimeUnit
+import javax.inject.Inject
+
+data class SettingsUiState(
+    val selectedSkin: TurntableSkin = TurntableSkin.DARK,
+    val isSpotifyConnected: Boolean = false,
+    val weeklyNotifEnabled: Boolean = true,
+    val hasNotificationAccess: Boolean = false
+)
+
+sealed class SettingsEvent {
+    data object Disconnected : SettingsEvent()
+}
+
+@HiltViewModel
+class SettingsViewModel @Inject constructor(
+    private val userPreferencesRepository: UserPreferencesRepository,
+    private val tokenManager: TokenManager,
+    @ApplicationContext private val context: Context
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(SettingsUiState())
+    val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
+
+    private val _events = MutableSharedFlow<SettingsEvent>()
+    val events: SharedFlow<SettingsEvent> = _events.asSharedFlow()
+
+    init {
+        collectSkin()
+        collectWeeklyNotif()
+        checkSpotifyConnection()
+    }
+
+    // ── Init collectors ───────────────────────────────────────────────────────
+
+    private fun collectSkin() {
+        viewModelScope.launch {
+            userPreferencesRepository.turntableSkin.collect { skin ->
+                _uiState.update { it.copy(selectedSkin = skin) }
+            }
+        }
+    }
+
+    private fun collectWeeklyNotif() {
+        viewModelScope.launch {
+            userPreferencesRepository.weeklyNotifEnabled.collect { enabled ->
+                _uiState.update { it.copy(weeklyNotifEnabled = enabled) }
+            }
+        }
+    }
+
+    private fun checkSpotifyConnection() {
+        viewModelScope.launch {
+            val connected = tokenManager.getRefreshToken() != null
+            _uiState.update { it.copy(isSpotifyConnected = connected) }
+        }
+    }
+
+    // ── Public actions ────────────────────────────────────────────────────────
+
+    /** Called on ON_RESUME so the notification access badge updates live. */
+    fun refreshNotificationAccess() {
+        val hasAccess = NotificationManagerCompat
+            .getEnabledListenerPackages(context)
+            .contains(context.packageName)
+        _uiState.update { it.copy(hasNotificationAccess = hasAccess) }
+    }
+
+    fun setSkin(skin: TurntableSkin) {
+        viewModelScope.launch { userPreferencesRepository.setTurntableSkin(skin) }
+    }
+
+    fun setWeeklyNotifEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            userPreferencesRepository.setWeeklyNotifEnabled(enabled)
+            val wm = WorkManager.getInstance(context)
+            if (enabled) {
+                val request = PeriodicWorkRequestBuilder<WeeklyAlbumWorker>(7, TimeUnit.DAYS)
+                    .setInitialDelay(7, TimeUnit.DAYS)
+                    .build()
+                wm.enqueueUniquePeriodicWork(
+                    WeeklyAlbumWorker.WORK_NAME,
+                    ExistingPeriodicWorkPolicy.REPLACE,
+                    request
+                )
+            } else {
+                wm.cancelUniqueWork(WeeklyAlbumWorker.WORK_NAME)
+            }
+        }
+    }
+
+    fun disconnect() {
+        viewModelScope.launch {
+            tokenManager.clearTokens()
+            _events.emit(SettingsEvent.Disconnected)
+        }
+    }
+}

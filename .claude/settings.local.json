@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep:*)",
+      "Bash(grep -E \"\\\\.\\(kt|xml\\)$\")",
+      "Bash(grep -v '^[[:space:]]*$')",
+      "Bash(./gradlew compileDebugKotlin)",
+      "Bash(grep:*)"
+    ]
+  }
+}
