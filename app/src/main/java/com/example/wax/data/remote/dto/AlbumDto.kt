@@ -49,6 +49,10 @@ data class NewReleasesDto(
     @SerializedName("albums") val albums: AlbumPageDto
 )
 
+data class SearchResultDto(
+    @SerializedName("albums") val albums: AlbumPageDto
+)
+
 data class AlbumPageDto(
     @SerializedName("items") val items: List<AlbumDto>,
     @SerializedName("total") val total: Int

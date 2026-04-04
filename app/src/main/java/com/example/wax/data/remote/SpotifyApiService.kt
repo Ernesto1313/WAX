@@ -2,6 +2,7 @@ package com.example.wax.data.remote
 
 import com.example.wax.data.remote.dto.AlbumDto
 import com.example.wax.data.remote.dto.NewReleasesDto
+import com.example.wax.data.remote.dto.SearchResultDto
 import com.example.wax.data.remote.dto.TrackPageDto
 import retrofit2.http.GET
 import retrofit2.http.Header
@@ -29,4 +30,12 @@ interface SpotifyApiService {
         @Query("limit") limit: Int = 20,
         @Query("offset") offset: Int = 0
     ): NewReleasesDto
+
+    @GET("search")
+    suspend fun searchAlbum(
+        @Header("Authorization") authorization: String,
+        @Query("q") query: String,
+        @Query("type") type: String = "album",
+        @Query("limit") limit: Int = 1
+    ): SearchResultDto
 }

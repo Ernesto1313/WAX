@@ -27,11 +27,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
-import androidx.lifecycle.ViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
-import androidx.savedstate.ViewTreeSavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.example.wax.core.media.MediaSessionRepository
 import com.example.wax.data.local.AlbumHistoryEntity
 import com.example.wax.data.repository.AlbumHistoryRepository
@@ -81,8 +81,8 @@ class WaxDreamService : DreamService(), LifecycleOwner, SavedStateRegistryOwner 
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
-            ViewTreeLifecycleOwner.set(this, this@WaxDreamService)
-            ViewTreeSavedStateRegistryOwner.set(this, this@WaxDreamService)
+            setViewTreeLifecycleOwner(this@WaxDreamService)
+            setViewTreeSavedStateRegistryOwner(this@WaxDreamService)
             setContent {
                 DreamScreen(
                     mediaSessionRepository = mediaSessionRepository,

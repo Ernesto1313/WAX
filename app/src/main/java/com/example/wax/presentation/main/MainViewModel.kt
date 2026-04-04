@@ -23,6 +23,7 @@ import com.example.wax.domain.usecase.GetWeeklyAlbumUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -50,7 +51,9 @@ data class MainUiState(
     val currentTrackId: String? = null,
     val isSessionActive: Boolean = false,
     val showNotificationPrompt: Boolean = false,
-    val turntableSkin: TurntableSkin = TurntableSkin.DARK
+    val turntableSkin: TurntableSkin = TurntableSkin.DARK,
+    // true = live from an active Spotify session, false = weekly curated pick
+    val isNowPlaying: Boolean = false
 )
 
 // One-shot events that MainActivity must act on (not suitable for UI state)
@@ -86,39 +89,87 @@ class MainViewModel @Inject constructor(
 
     // ── Media session ─────────────────────────────────────────────────────────
 
+    // Tracks the last album name seen from Spotify so we only hit the API when
+    // the playing album actually changes.
+    private var lastAlbumName: String? = null
+    private var albumFetchJob: Job? = null
+
     // Collects from MediaSessionRepository (updated by MediaNotificationListenerService).
-    // Matches the incoming track title against the loaded album's tracklist and
-    // updates currentTrackId + isPlaying so the vinyl and bottom-sheet stay in sync.
+    // Two responsibilities:
+    //   1. Match the incoming track title against the loaded album's tracklist so
+    //      the tracklist highlights the current track.
+    //   2. Detect album changes and fetch the full album from Spotify, replacing
+    //      the weekly pick with whatever is now playing.
     private fun collectMediaSession() {
         viewModelScope.launch {
             mediaSessionRepository.state.collect { mediaState ->
-                val album = _uiState.value.album ?: return@collect
+                val album    = _uiState.value.album
                 val hasTitle = !mediaState.trackTitle.isNullOrEmpty()
-                val matchedTrack = if (hasTitle) {
+
+                // Track matching — only works once an album is loaded
+                val matchedTrack = if (hasTitle && album != null) {
                     album.tracks.firstOrNull { track ->
                         track.name.contains(mediaState.trackTitle!!, ignoreCase = true) ||
                         mediaState.trackTitle.contains(track.name, ignoreCase = true)
                     }
                 } else null
+
                 Log.d("MainViewModel",
                     "MediaSession → title='${mediaState.trackTitle}' | " +
+                    "album='${mediaState.albumName}' | " +
                     "matched='${matchedTrack?.name}' | isPlaying=${mediaState.isPlaying}"
                 )
+
                 _uiState.update { state ->
                     state.copy(
-                        // Only sync isPlaying from session when a title is active.
-                        // Without a title, vinyl keeps its current spin state (ambient).
-                        isPlaying = if (hasTitle) mediaState.isPlaying else state.isPlaying,
-                        // Only highlight a track when session reports an active title.
-                        // Clear when no title (no active session or unmatched album).
+                        isPlaying      = if (hasTitle) mediaState.isPlaying else state.isPlaying,
                         currentTrackId = if (hasTitle) matchedTrack?.id else null
                     )
+                }
+
+                // Album change detection — fetch from Spotify when a new album starts playing
+                val newAlbumName = mediaState.albumName
+                if (!newAlbumName.isNullOrEmpty() && newAlbumName != lastAlbumName) {
+                    lastAlbumName = newAlbumName
+                    fetchNowPlayingAlbum(newAlbumName, mediaState.artistName)
                 }
             }
         }
         viewModelScope.launch {
             mediaSessionRepository.isSessionActive.collect { active ->
                 _uiState.update { it.copy(isSessionActive = active) }
+            }
+        }
+    }
+
+    private fun fetchNowPlayingAlbum(albumName: String, artistName: String?) {
+        albumFetchJob?.cancel()
+        albumFetchJob = viewModelScope.launch {
+            val token = getValidToken() ?: return@launch
+            try {
+                val album = repository.searchAndGetAlbum(token, albumName, artistName)
+                    ?: return@launch
+                Log.d("MainViewModel", "Now playing → '${album.name}' | tracks=${album.tracks.size}")
+                _uiState.update {
+                    it.copy(
+                        albumTitle    = album.name,
+                        artistName    = album.artistNames.joinToString(", "),
+                        year          = album.releaseDate.take(4),
+                        coverUrl      = album.coverUrl,
+                        spotifyUrl    = album.spotifyUrl,
+                        album         = album,
+                        currentTrackId = null,
+                        isNowPlaying  = true,
+                        error         = null
+                    )
+                }
+                albumHistoryRepository.saveAlbum(album)
+                if (album.coverUrl.isNotEmpty()) {
+                    mediaSessionRepository.setAlbumCover(album.coverUrl)
+                    extractVinylColors(album.coverUrl)
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "fetchNowPlayingAlbum failed for '$albumName'", e)
             }
         }
     }
@@ -231,18 +282,24 @@ class MainViewModel @Inject constructor(
     private suspend fun loadWeeklyAlbum(accessToken: String) {
         try {
             val album = getWeeklyAlbumUseCase(accessToken)
-            Log.d("MainViewModel", "Album loaded: '${album.name}' | coverUrl='${album.coverUrl}' | spotifyUrl='${album.spotifyUrl}' | tracks=${album.tracks.size}")
+            Log.d("MainViewModel", "Weekly album: '${album.name}' | tracks=${album.tracks.size}")
+            // Don't overwrite a live "now playing" album that may have loaded concurrently
+            if (_uiState.value.isNowPlaying) {
+                _uiState.update { it.copy(isLoading = false) }
+                return
+            }
             _uiState.update {
                 it.copy(
-                    albumTitle = album.name,
-                    artistName = album.artistNames.joinToString(", "),
-                    year = album.releaseDate.take(4),
-                    coverUrl = album.coverUrl,
-                    spotifyUrl = album.spotifyUrl,
-                    isLoading = false,
-                    error = null,
-                    album = album,
+                    albumTitle    = album.name,
+                    artistName    = album.artistNames.joinToString(", "),
+                    year          = album.releaseDate.take(4),
+                    coverUrl      = album.coverUrl,
+                    spotifyUrl    = album.spotifyUrl,
+                    isLoading     = false,
+                    error         = null,
+                    album         = album,
                     currentTrackId = null,
+                    isNowPlaying  = false
                 )
             }
             albumHistoryRepository.saveAlbum(album)

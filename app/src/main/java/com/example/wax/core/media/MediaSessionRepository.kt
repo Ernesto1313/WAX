@@ -11,6 +11,7 @@ import javax.inject.Singleton
 data class MediaSessionState(
     val trackTitle: String? = null,
     val artistName: String? = null,
+    val albumName: String? = null,
     val isPlaying: Boolean = false,
     val coverUrl: String = ""
 )
@@ -26,10 +27,10 @@ class MediaSessionRepository @Inject constructor() {
 
     @Volatile private var activeController: MediaController? = null
 
-    fun update(trackTitle: String?, artistName: String?, isPlaying: Boolean) {
+    fun update(trackTitle: String?, artistName: String?, albumName: String?, isPlaying: Boolean) {
         // Preserve coverUrl — it is set independently via setAlbumCover() and must not be wiped
         // by track/playback updates from MediaNotificationListenerService.
-        _state.update { it.copy(trackTitle = trackTitle, artistName = artistName, isPlaying = isPlaying) }
+        _state.update { it.copy(trackTitle = trackTitle, artistName = artistName, albumName = albumName, isPlaying = isPlaying) }
     }
 
     fun setActiveController(controller: MediaController?) {

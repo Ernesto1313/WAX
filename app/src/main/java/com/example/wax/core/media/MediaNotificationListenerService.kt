@@ -43,20 +43,21 @@ class MediaNotificationListenerService : NotificationListenerService() {
 
     private val mediaCallback = object : MediaController.Callback() {
         override fun onMetadataChanged(metadata: MediaMetadata?) {
-            val title    = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
-            val artist   = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)
+            val title     = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
+            val artist    = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)
+            val album     = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM)
             val isPlaying = registeredControllers.any {
                 it.playbackState?.state == PlaybackState.STATE_PLAYING
             }
-            Log.d(TAG, "Metadata → title=$title | artist=$artist | playing=$isPlaying")
-            mediaSessionRepository.update(title, artist, isPlaying)
+            Log.d(TAG, "Metadata → title=$title | artist=$artist | album=$album | playing=$isPlaying")
+            mediaSessionRepository.update(title, artist, album, isPlaying)
         }
 
         override fun onPlaybackStateChanged(state: PlaybackState?) {
             val isPlaying = state?.state == PlaybackState.STATE_PLAYING
             val current   = mediaSessionRepository.state.value
             Log.d(TAG, "PlaybackState → isPlaying=$isPlaying")
-            mediaSessionRepository.update(current.trackTitle, current.artistName, isPlaying)
+            mediaSessionRepository.update(current.trackTitle, current.artistName, current.albumName, isPlaying)
         }
     }
 
@@ -106,8 +107,9 @@ class MediaNotificationListenerService : NotificationListenerService() {
             val meta      = spotifyController.metadata
             val title     = meta?.getString(MediaMetadata.METADATA_KEY_TITLE)
             val artist    = meta?.getString(MediaMetadata.METADATA_KEY_ARTIST)
+            val album     = meta?.getString(MediaMetadata.METADATA_KEY_ALBUM)
             val isPlaying = spotifyController.playbackState?.state == PlaybackState.STATE_PLAYING
-            mediaSessionRepository.update(title, artist, isPlaying)
+            mediaSessionRepository.update(title, artist, album, isPlaying)
             mediaSessionRepository.setActiveController(spotifyController)
         } catch (e: SecurityException) {
             Log.w(TAG, "Cannot access media sessions — notification listener not enabled: ${e.message}")

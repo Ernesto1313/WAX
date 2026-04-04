@@ -182,6 +182,8 @@ fun MainScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.clickable(onClick = onNavigateToDetail)
                 ) {
+                    AlbumSourceBadge(isNowPlaying = uiState.isNowPlaying)
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = uiState.albumTitle,
                         color = Color.White,
@@ -235,6 +237,30 @@ fun MainScreen(
                 Spacer(modifier = Modifier.height(130.dp))
             }
         }
+    }
+}
+
+// ── Album source badge ─────────────────────────────────────────────────────────
+
+@Composable
+private fun AlbumSourceBadge(isNowPlaying: Boolean) {
+    val label = if (isNowPlaying) "● Now Playing" else "Weekly Pick"
+    val textColor = if (isNowPlaying) SpotifyGreen else TextSecondary
+    val bgColor = if (isNowPlaying) SpotifyGreen.copy(alpha = 0.12f)
+                  else Color.White.copy(alpha = 0.06f)
+
+    Box(
+        modifier = Modifier
+            .background(bgColor, RoundedCornerShape(50))
+            .padding(horizontal = 10.dp, vertical = 3.dp)
+    ) {
+        Text(
+            text = label,
+            color = textColor,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.5.sp
+        )
     }
 }
 
