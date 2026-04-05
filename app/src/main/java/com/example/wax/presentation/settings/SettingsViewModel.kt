@@ -1,6 +1,7 @@
 package com.example.wax.presentation.settings
 
 import android.content.Context
+import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -28,7 +29,8 @@ data class SettingsUiState(
     val selectedSkin: TurntableSkin = TurntableSkin.DARK,
     val isSpotifyConnected: Boolean = false,
     val weeklyNotifEnabled: Boolean = true,
-    val hasNotificationAccess: Boolean = false
+    val hasNotificationAccess: Boolean = false,
+    val hasOverlayPermission: Boolean = false
 )
 
 sealed class SettingsEvent {
@@ -52,6 +54,7 @@ class SettingsViewModel @Inject constructor(
         collectSkin()
         collectWeeklyNotif()
         checkSpotifyConnection()
+        refreshOverlayPermission()
     }
 
     // ── Init collectors ───────────────────────────────────────────────────────
@@ -87,6 +90,11 @@ class SettingsViewModel @Inject constructor(
             .getEnabledListenerPackages(context)
             .contains(context.packageName)
         _uiState.update { it.copy(hasNotificationAccess = hasAccess) }
+    }
+
+    /** Called on ON_RESUME so the overlay permission badge updates after the user returns from Settings. */
+    fun refreshOverlayPermission() {
+        _uiState.update { it.copy(hasOverlayPermission = Settings.canDrawOverlays(context)) }
     }
 
     fun setSkin(skin: TurntableSkin) {

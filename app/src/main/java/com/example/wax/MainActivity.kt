@@ -3,8 +3,10 @@ package com.example.wax
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -20,6 +22,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.example.wax.core.auth.SpotifyAuthManager
 import com.example.wax.core.media.MediaPlaybackService
 import com.example.wax.core.work.WeeklyAlbumWorker
@@ -38,13 +41,22 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: MainViewModel by viewModels()
 
+    // Tracks whether we have already prompted for the overlay permission this session
+    // so we don't send the user to Settings on every onResume().
+    private var overlayPermissionPrompted = false
+
     private val requestNotificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {
             // Granted or denied — WorkManager will post silently when ready
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // installSplashScreen must be called before super.onCreate so the splash theme
+        // is applied before the window is first drawn.
+        val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+        // Keep the splash visible until the first album (or auth event) is ready.
+        splashScreen.setKeepOnScreenCondition { !viewModel.isReady.value }
         enableEdgeToEdge()
 
         requestPostNotificationsIfNeeded()
@@ -72,6 +84,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         maybeStartMediaPlaybackService()
+        maybeRequestOverlayPermission()
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -92,6 +105,22 @@ class MainActivity : ComponentActivity() {
             WeeklyAlbumWorker.WORK_NAME,
             ExistingPeriodicWorkPolicy.KEEP,
             request
+        )
+    }
+
+    /**
+     * Prompts for the SYSTEM_ALERT_WINDOW (overlay) permission once per session,
+     * but only after the user has already granted notification listener access —
+     * both permissions are needed for the lock screen feature to work on Samsung One UI.
+     */
+    private fun maybeRequestOverlayPermission() {
+        if (overlayPermissionPrompted) return
+        if (Settings.canDrawOverlays(this)) return
+        val notifGranted = NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)
+        if (!notifGranted) return   // no point asking until notification access is granted
+        overlayPermissionPrompted = true
+        startActivity(
+            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
         )
     }
 

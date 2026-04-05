@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -18,6 +19,7 @@ import com.example.wax.presentation.detail.DetailScreen
 import com.example.wax.presentation.history.HistoryScreen
 import com.example.wax.presentation.main.MainScreen
 import com.example.wax.presentation.main.MainViewModel
+import com.example.wax.presentation.onboarding.OnboardingScreen
 import com.example.wax.presentation.settings.SettingsScreen
 
 // Bottom bar is shown only for top-level tab destinations
@@ -28,6 +30,10 @@ fun WaxNavGraph() {
     val navController = rememberNavController()
     // Activity-scoped so all screens share the same MainViewModel instance
     val mainViewModel: MainViewModel = hiltViewModel(LocalContext.current as ComponentActivity)
+
+    val onboardingCompleted by mainViewModel.onboardingCompleted.collectAsStateWithLifecycle()
+    // Wait until DataStore has resolved the flag — splash is covering us anyway
+    if (onboardingCompleted == null) return
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -41,12 +47,14 @@ fun WaxNavGraph() {
         }
     }
 
+    val startDestination = if (onboardingCompleted == true) "home" else "onboarding"
+
     Scaffold(
         containerColor = Color(0xFF0D0D0D),
         bottomBar = {
             if (currentRoute in BOTTOM_BAR_ROUTES) {
                 WaxBottomBar(
-                    currentRoute       = currentRoute,
+                    currentRoute         = currentRoute,
                     onNavigateToHome     = { navigateToTab("home") },
                     onNavigateToHistory  = { navigateToTab("history") },
                     onNavigateToSettings = { navigateToTab("settings") }
@@ -56,11 +64,20 @@ fun WaxNavGraph() {
     ) { innerPadding ->
         NavHost(
             navController    = navController,
-            startDestination = "home",
+            startDestination = startDestination,
             modifier         = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            composable("onboarding") {
+                OnboardingScreen(
+                    onContinue = {
+                        navController.navigate("home") {
+                            popUpTo("onboarding") { inclusive = true }
+                        }
+                    }
+                )
+            }
             composable("home") {
                 MainScreen(
                     onNavigateToDetail = { navController.navigate("detail") },

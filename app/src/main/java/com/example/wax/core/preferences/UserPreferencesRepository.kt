@@ -30,6 +30,8 @@ class UserPreferencesRepository @Inject constructor(
             stringPreferencesKey("turntable_skin")
         private val KEY_WEEKLY_NOTIF_ENABLED =
             booleanPreferencesKey("weekly_notif_enabled")
+        private val KEY_ONBOARDING_COMPLETED =
+            booleanPreferencesKey("onboarding_completed")
     }
 
     // ── Notification listener dismissed ──────────────────────────────────────
@@ -60,5 +62,16 @@ class UserPreferencesRepository @Inject constructor(
 
     suspend fun setWeeklyNotifEnabled(enabled: Boolean) {
         context.userPrefsDataStore.edit { it[KEY_WEEKLY_NOTIF_ENABLED] = enabled }
+    }
+
+    // ── Onboarding ────────────────────────────────────────────────────────────
+
+    val onboardingCompleted: Flow<Boolean> = context.userPrefsDataStore.data
+        .map { prefs -> prefs[KEY_ONBOARDING_COMPLETED] ?: false }
+
+    suspend fun readOnboardingCompleted(): Boolean = onboardingCompleted.first()
+
+    suspend fun setOnboardingCompleted() {
+        context.userPrefsDataStore.edit { it[KEY_ONBOARDING_COMPLETED] = true }
     }
 }

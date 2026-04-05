@@ -1,6 +1,7 @@
 package com.example.wax.presentation.settings
 
 import android.content.Intent
+import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -67,6 +68,7 @@ fun SettingsScreen(
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         viewModel.refreshNotificationAccess()
+        viewModel.refreshOverlayPermission()
     }
 
     LaunchedEffect(Unit) {
@@ -224,6 +226,35 @@ fun SettingsScreen(
                 }
             ) {
                 Text("Set up", color = SpotifyGreen, fontSize = 13.sp)
+            }
+        }
+
+        SettingsRow {
+            Column(modifier = Modifier.weight(1f)) {
+                val overlayLabel = if (uiState.hasOverlayPermission) "Granted" else "Not granted"
+                val overlayColor = if (uiState.hasOverlayPermission) SpotifyGreen else DangerRed
+                Text("Display over lock screen", color = Color.White, fontSize = 15.sp)
+                Text(
+                    "Required to show the turntable on Samsung One UI and MIUI",
+                    color = TextSecondary,
+                    fontSize = 13.sp
+                )
+                Text(overlayLabel, color = overlayColor, fontSize = 12.sp)
+            }
+            if (!uiState.hasOverlayPermission) {
+                Spacer(Modifier.width(12.dp))
+                TextButton(
+                    onClick = {
+                        context.startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${context.packageName}")
+                            )
+                        )
+                    }
+                ) {
+                    Text("Grant", color = SpotifyGreen, fontSize = 13.sp)
+                }
             }
         }
 

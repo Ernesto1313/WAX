@@ -18,12 +18,14 @@ import com.example.wax.core.preferences.UserPreferencesRepository
 import com.example.wax.data.repository.AlbumHistoryRepository
 import com.example.wax.data.repository.SpotifyRepository
 import com.example.wax.domain.model.Album
+import com.example.wax.domain.model.Track
 import com.example.wax.domain.model.TurntableSkin
 import com.example.wax.domain.usecase.GetWeeklyAlbumUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -53,7 +55,9 @@ data class MainUiState(
     val showNotificationPrompt: Boolean = false,
     val turntableSkin: TurntableSkin = TurntableSkin.DARK,
     // true = live from an active Spotify session, false = weekly curated pick
-    val isNowPlaying: Boolean = false
+    val isNowPlaying: Boolean = false,
+    // true while tracks are being fetched — UI shows a spinner instead of an empty list
+    val isTracksLoading: Boolean = false
 )
 
 // One-shot events that MainActivity must act on (not suitable for UI state)
@@ -80,7 +84,23 @@ class MainViewModel @Inject constructor(
     private val _authEvent = MutableSharedFlow<AuthEvent>(extraBufferCapacity = 1)
     val authEvent: SharedFlow<AuthEvent> = _authEvent.asSharedFlow()
 
+    // Splash screen condition — true once the first album (or auth failure) is resolved
+    private val _isReady = MutableStateFlow(false)
+    val isReady: StateFlow<Boolean> = _isReady.asStateFlow()
+
+    // null = not yet read from DataStore; true/false = resolved
+    private val _onboardingCompleted = MutableStateFlow<Boolean?>(null)
+    val onboardingCompleted: StateFlow<Boolean?> = _onboardingCompleted.asStateFlow()
+
     init {
+        // Safety timeout: dismiss the splash screen after 3 seconds regardless of load outcome
+        viewModelScope.launch {
+            delay(3_000)
+            _isReady.value = true
+        }
+        viewModelScope.launch {
+            _onboardingCompleted.value = userPreferencesRepository.readOnboardingCompleted()
+        }
         checkAuthAndLoad()
         collectMediaSession()
         collectSkinPreference()
@@ -114,12 +134,6 @@ class MainViewModel @Inject constructor(
                     }
                 } else null
 
-                Log.d("MainViewModel",
-                    "MediaSession → title='${mediaState.trackTitle}' | " +
-                    "album='${mediaState.albumName}' | " +
-                    "matched='${matchedTrack?.name}' | isPlaying=${mediaState.isPlaying}"
-                )
-
                 _uiState.update { state ->
                     state.copy(
                         isPlaying      = if (hasTitle) mediaState.isPlaying else state.isPlaying,
@@ -146,30 +160,53 @@ class MainViewModel @Inject constructor(
         albumFetchJob?.cancel()
         albumFetchJob = viewModelScope.launch {
             val token = getValidToken() ?: return@launch
+            _uiState.update { it.copy(isTracksLoading = true) }
             try {
                 val album = repository.searchAndGetAlbum(token, albumName, artistName)
-                    ?: return@launch
-                Log.d("MainViewModel", "Now playing → '${album.name}' | tracks=${album.tracks.size}")
+                    ?: run {
+                        _uiState.update { it.copy(isTracksLoading = false) }
+                        return@launch
+                    }
+
+                // If the search result returned no tracks, fetch them separately to avoid an
+                // empty tracklist flash before the separate tracks call completes.
+                val albumWithTracks = if (album.tracks.isEmpty() && album.totalTracks > 0) {
+                    val tracks = repository.getAlbumTracks(token, album.id).map { t ->
+                        Track(
+                            id          = t.id,
+                            name        = t.name,
+                            trackNumber = t.trackNumber,
+                            durationMs  = t.durationMs,
+                            artistNames = t.artists.map { it.name },
+                            previewUrl  = t.previewUrl
+                        )
+                    }
+                    album.copy(tracks = tracks)
+                } else album
+
+                // Single atomic update — album enters state only once tracks are ready
                 _uiState.update {
                     it.copy(
-                        albumTitle    = album.name,
-                        artistName    = album.artistNames.joinToString(", "),
-                        year          = album.releaseDate.take(4),
-                        coverUrl      = album.coverUrl,
-                        spotifyUrl    = album.spotifyUrl,
-                        album         = album,
-                        currentTrackId = null,
-                        isNowPlaying  = true,
-                        error         = null
+                        albumTitle      = albumWithTracks.name,
+                        artistName      = albumWithTracks.artistNames.joinToString(", "),
+                        year            = albumWithTracks.releaseDate.take(4),
+                        coverUrl        = albumWithTracks.coverUrl,
+                        spotifyUrl      = albumWithTracks.spotifyUrl,
+                        album           = albumWithTracks,
+                        currentTrackId  = null,
+                        isNowPlaying    = true,
+                        isTracksLoading = false,
+                        error           = null
                     )
                 }
-                albumHistoryRepository.saveAlbum(album)
-                if (album.coverUrl.isNotEmpty()) {
-                    mediaSessionRepository.setAlbumCover(album.coverUrl)
-                    extractVinylColors(album.coverUrl)
+                albumHistoryRepository.saveAlbum(albumWithTracks)
+                if (albumWithTracks.coverUrl.isNotEmpty()) {
+                    mediaSessionRepository.setAlbumCover(albumWithTracks.coverUrl)
+                    extractVinylColors(albumWithTracks.coverUrl)
                 }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "fetchNowPlayingAlbum failed for '$albumName'", e)
+                _uiState.update { it.copy(isTracksLoading = false) }
             }
         }
     }
@@ -240,6 +277,8 @@ class MainViewModel @Inject constructor(
             if (token != null) {
                 loadWeeklyAlbum(token)
             } else {
+                // No token — dismiss splash before launching the auth flow
+                _isReady.value = true
                 _uiState.update { it.copy(isLoading = false) }
                 _authEvent.emit(AuthEvent.LaunchAuth)
             }
@@ -272,6 +311,7 @@ class MainViewModel @Inject constructor(
                 tokenManager.saveTokens(dto)
                 loadWeeklyAlbum(dto.accessToken)
             } catch (e: Exception) {
+                _isReady.value = true
                 _uiState.update { it.copy(isLoading = false, error = "Authentication failed") }
             }
         }
@@ -280,36 +320,59 @@ class MainViewModel @Inject constructor(
     // ── Album loading ─────────────────────────────────────────────────────────
 
     private suspend fun loadWeeklyAlbum(accessToken: String) {
+        _uiState.update { it.copy(isTracksLoading = true) }
         try {
             val album = getWeeklyAlbumUseCase(accessToken)
-            Log.d("MainViewModel", "Weekly album: '${album.name}' | tracks=${album.tracks.size}")
+
+            // If the /albums endpoint returned no tracks, fetch them separately to avoid an
+            // empty tracklist. Both fetches complete before we touch uiState.album.
+            val albumWithTracks = if (album.tracks.isEmpty() && album.totalTracks > 0) {
+                val tracks = repository.getAlbumTracks(accessToken, album.id).map { t ->
+                    Track(
+                        id          = t.id,
+                        name        = t.name,
+                        trackNumber = t.trackNumber,
+                        durationMs  = t.durationMs,
+                        artistNames = t.artists.map { it.name },
+                        previewUrl  = t.previewUrl
+                    )
+                }
+                album.copy(tracks = tracks)
+            } else album
+
             // Don't overwrite a live "now playing" album that may have loaded concurrently
             if (_uiState.value.isNowPlaying) {
-                _uiState.update { it.copy(isLoading = false) }
+                _uiState.update { it.copy(isLoading = false, isTracksLoading = false) }
+                _isReady.value = true
                 return
             }
+
+            // Single atomic update — album only enters state once tracks are ready
             _uiState.update {
                 it.copy(
-                    albumTitle    = album.name,
-                    artistName    = album.artistNames.joinToString(", "),
-                    year          = album.releaseDate.take(4),
-                    coverUrl      = album.coverUrl,
-                    spotifyUrl    = album.spotifyUrl,
-                    isLoading     = false,
-                    error         = null,
-                    album         = album,
-                    currentTrackId = null,
-                    isNowPlaying  = false
+                    albumTitle      = albumWithTracks.name,
+                    artistName      = albumWithTracks.artistNames.joinToString(", "),
+                    year            = albumWithTracks.releaseDate.take(4),
+                    coverUrl        = albumWithTracks.coverUrl,
+                    spotifyUrl      = albumWithTracks.spotifyUrl,
+                    isLoading       = false,
+                    isTracksLoading = false,
+                    error           = null,
+                    album           = albumWithTracks,
+                    currentTrackId  = null,
+                    isNowPlaying    = false
                 )
             }
-            albumHistoryRepository.saveAlbum(album)
-            if (album.coverUrl.isNotEmpty()) {
-                mediaSessionRepository.setAlbumCover(album.coverUrl)
-                extractVinylColors(album.coverUrl)
+            _isReady.value = true
+            albumHistoryRepository.saveAlbum(albumWithTracks)
+            if (albumWithTracks.coverUrl.isNotEmpty()) {
+                mediaSessionRepository.setAlbumCover(albumWithTracks.coverUrl)
+                extractVinylColors(albumWithTracks.coverUrl)
             }
         } catch (e: Exception) {
             Log.e("MainViewModel", "loadWeeklyAlbum failed", e)
-            _uiState.update { it.copy(isLoading = false, error = "Could not load album") }
+            _isReady.value = true
+            _uiState.update { it.copy(isLoading = false, isTracksLoading = false, error = "Could not load album") }
         }
     }
 
@@ -342,6 +405,8 @@ class MainViewModel @Inject constructor(
                     vinylVibrantColor = Color(vibrant)
                 )
             }
+            // Push colors to the media repo so LockScreenActivity can use them
+            mediaSessionRepository.setVinylColors(dominant, vibrant)
         } catch (e: Exception) {
             // Keep dark grey fallback — no state update needed
         }

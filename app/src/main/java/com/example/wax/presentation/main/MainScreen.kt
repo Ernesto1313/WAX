@@ -39,6 +39,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -116,6 +117,7 @@ fun MainScreen(
                     tracks = uiState.album?.tracks ?: emptyList(),
                     currentTrackId = uiState.currentTrackId,
                     isPlaying = uiState.isPlaying,
+                    isTracksLoading = uiState.isTracksLoading,
                     onTrackClick = { track ->
                         viewModel.onTrackSelected(track.id)
                         val trackUri = Uri.parse("spotify:track:${track.id}")
@@ -322,6 +324,7 @@ private fun TrackListSheet(
     tracks: List<Track>,
     currentTrackId: String?,
     isPlaying: Boolean,
+    isTracksLoading: Boolean,
     onTrackClick: (Track) -> Unit
 ) {
     val listState = rememberLazyListState()
@@ -358,16 +361,36 @@ private fun TrackListSheet(
                 Text(text = "Tracklist", color = Color.White, fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.width(6.dp))
-                Text(text = "${tracks.size}", color = TextSecondary, fontSize = 13.sp)
+                if (!isTracksLoading) {
+                    Text(text = "${tracks.size}", color = TextSecondary, fontSize = 13.sp)
+                }
             }
         }
 
-        items(tracks, key = { it.id }) { track ->
-            SheetTrackRow(
-                track = track,
-                isCurrentlyPlaying = isPlaying && track.id == currentTrackId,
-                onClick = { onTrackClick(track) }
-            )
+        // Show a spinner while tracks are loading instead of an empty list
+        if (isTracksLoading && tracks.isEmpty()) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        color = SpotifyGreen,
+                        modifier = Modifier.size(28.dp),
+                        strokeWidth = 2.5.dp
+                    )
+                }
+            }
+        } else {
+            items(tracks, key = { it.id }) { track ->
+                SheetTrackRow(
+                    track = track,
+                    isCurrentlyPlaying = isPlaying && track.id == currentTrackId,
+                    onClick = { onTrackClick(track) }
+                )
+            }
         }
 
         item { Spacer(modifier = Modifier.height(32.dp)) }

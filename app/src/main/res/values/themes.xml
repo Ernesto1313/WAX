@@ -1,5 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.Wax" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Splash screen theme — MainActivity starts with this theme.
+         The splash screen API transitions to postSplashScreenTheme once the
+         keep-on-screen condition returns false. -->
+    <style name="Theme.Wax" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_vinyl</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/splash_background</item>
+        <item name="postSplashScreenTheme">@style/Theme.Wax.Main</item>
+    </style>
+
+    <!-- Actual app theme applied after the splash dismisses -->
+    <style name="Theme.Wax.Main" parent="android:Theme.Material.Light.NoActionBar" />
+
 </resources>

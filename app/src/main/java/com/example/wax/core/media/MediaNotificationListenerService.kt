@@ -1,13 +1,18 @@
 package com.example.wax.core.media
 
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.service.notification.NotificationListenerService
 import android.util.Log
+import androidx.core.content.ContextCompat
+import com.example.wax.presentation.lockscreen.LockScreenActivity
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -29,6 +34,29 @@ class MediaNotificationListenerService : NotificationListenerService() {
 
     private var sessionManager: MediaSessionManager? = null
     private val registeredControllers = mutableListOf<MediaController>()
+    private var receiverRegistered = false
+
+    // ── Screen-event receiver ─────────────────────────────────────────────────
+    // ACTION_SCREEN_OFF  → screen turned off while playing → show lock screen overlay
+    // ACTION_USER_PRESENT → user swiped past keyguard       → dismiss the overlay
+
+    private val screenEventReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> {
+                    if (mediaSessionRepository.state.value.isPlaying) {
+                        startActivity(
+                            Intent(this@MediaNotificationListenerService, LockScreenActivity::class.java)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                        )
+                    }
+                }
+                Intent.ACTION_USER_PRESENT -> {
+                    mediaSessionRepository.signalDismissLockScreen()
+                }
+            }
+        }
+    }
 
     // ── Session-change listener ───────────────────────────────────────────────
     // Fired by the OS whenever the set of active MediaSessions changes (app opened,
@@ -49,22 +77,41 @@ class MediaNotificationListenerService : NotificationListenerService() {
             val isPlaying = registeredControllers.any {
                 it.playbackState?.state == PlaybackState.STATE_PLAYING
             }
-            Log.d(TAG, "Metadata → title=$title | artist=$artist | album=$album | playing=$isPlaying")
             mediaSessionRepository.update(title, artist, album, isPlaying)
         }
 
         override fun onPlaybackStateChanged(state: PlaybackState?) {
             val isPlaying = state?.state == PlaybackState.STATE_PLAYING
             val current   = mediaSessionRepository.state.value
-            Log.d(TAG, "PlaybackState → isPlaying=$isPlaying")
             mediaSessionRepository.update(current.trackTitle, current.artistName, current.albumName, isPlaying)
         }
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
+    override fun onCreate() {
+        super.onCreate()
+        ContextCompat.registerReceiver(
+            this,
+            screenEventReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_USER_PRESENT)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        receiverRegistered = true
+    }
+
+    override fun onDestroy() {
+        if (receiverRegistered) {
+            unregisterReceiver(screenEventReceiver)
+            receiverRegistered = false
+        }
+        super.onDestroy()
+    }
+
     override fun onListenerConnected() {
-        Log.d(TAG, "Listener connected")
         val sm = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
         sessionManager = sm
         sm.addOnActiveSessionsChangedListener(
@@ -75,7 +122,6 @@ class MediaNotificationListenerService : NotificationListenerService() {
     }
 
     override fun onListenerDisconnected() {
-        Log.d(TAG, "Listener disconnected")
         sessionManager?.removeOnActiveSessionsChangedListener(sessionChangedListener)
         sessionManager = null
         clearControllers()
@@ -92,8 +138,6 @@ class MediaNotificationListenerService : NotificationListenerService() {
             ) ?: return
 
             val spotifyController = sessions.firstOrNull { it.packageName == SPOTIFY_PACKAGE }
-            Log.d(TAG, "Active session: ${spotifyController?.packageName ?: "none"} " +
-                    "(${sessions.size} total session(s))")
 
             if (spotifyController == null) {
                 mediaSessionRepository.setActiveController(null)

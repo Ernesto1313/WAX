@@ -7,6 +7,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.MEDIA_CONTENT_CONTROL" />
+    <!-- Full-screen intent for lock screen overlay (auto-granted <API34, user-granted on 34+) -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- Overlay window — required on Samsung One UI to show LockScreenActivity above the keyguard -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:name=".WaxApp"
@@ -41,6 +45,20 @@
                     android:host="callback" />
             </intent-filter>
         </activity>
+
+        <!--
+            Lock screen overlay — shown over the keyguard when Spotify starts playing.
+            singleInstance ensures only one instance exists across tasks.
+            excludeFromRecents keeps it out of the recent-apps list.
+        -->
+        <activity
+            android:name=".presentation.lockscreen.LockScreenActivity"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:showOnLockScreen="true"
+            android:turnScreenOn="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.Wax.Main" />
 
         <!--
             Notification listener service — grants access to active MediaSessions on the device.

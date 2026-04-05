@@ -18,8 +18,8 @@ import androidx.media.app.NotificationCompat.MediaStyle
 import coil.ImageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
-import com.example.wax.MainActivity
 import com.example.wax.R
+import com.example.wax.presentation.lockscreen.LockScreenActivity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -172,9 +172,18 @@ class MediaPlaybackService : Service() {
             return
         }
 
+        // Tapping the notification always routes to LockScreenActivity.
+        // LockScreenActivity will redirect to MainActivity when the phone is not locked.
+        val lockScreenIntent = Intent(this, LockScreenActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val contentIntent = PendingIntent.getActivity(
-            this, 0,
-            Intent(this, MainActivity::class.java),
+            this, 0, lockScreenIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        // Full-screen intent: shown automatically on lock screen when the notification posts.
+        // Requires USE_FULL_SCREEN_INTENT permission (auto-granted on API <34; user-granted on 34+).
+        val fullScreenPendingIntent = PendingIntent.getActivity(
+            this, 5, lockScreenIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -199,6 +208,7 @@ class MediaPlaybackService : Service() {
                     .setMediaSession(mediaSession.sessionToken)
                     .setShowActionsInCompactView(0, 1, 2)
             )
+            .setFullScreenIntent(fullScreenPendingIntent, false)
 
         val notification = builder.build()
 
