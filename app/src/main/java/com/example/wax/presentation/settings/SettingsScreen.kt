@@ -233,18 +233,43 @@ fun SettingsScreen(
 
         SettingsRow {
             Column(modifier = Modifier.weight(1f)) {
-                val overlayLabel = if (uiState.hasOverlayPermission) "Granted" else "Not granted"
-                val overlayColor = if (uiState.hasOverlayPermission) SpotifyGreen else DangerRed
                 Text("Display over lock screen", color = Color.White, fontSize = 15.sp)
                 Text(
                     "Required to show the turntable on Samsung One UI and MIUI",
-                    color = TextSecondary,
+                    color    = TextSecondary,
                     fontSize = 13.sp
                 )
-                Text(overlayLabel, color = overlayColor, fontSize = 12.sp)
+                if (uiState.hasOverlayPermission) {
+                    Text("Granted", color = SpotifyGreen, fontSize = 12.sp)
+                    Text(
+                        "To disable, tap to open settings",
+                        color    = TextSecondary,
+                        fontSize = 11.sp
+                    )
+                } else {
+                    Text("Not granted", color = DangerRed, fontSize = 12.sp)
+                }
             }
-            if (!uiState.hasOverlayPermission) {
-                Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(12.dp))
+            if (uiState.hasOverlayPermission) {
+                Switch(
+                    checked         = true,
+                    onCheckedChange = {
+                        context.startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:${context.packageName}")
+                            )
+                        )
+                    },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor   = Color.White,
+                        checkedTrackColor   = SpotifyGreen,
+                        uncheckedThumbColor = Color.White,
+                        uncheckedTrackColor = SurfaceHigh
+                    )
+                )
+            } else {
                 TextButton(
                     onClick = {
                         context.startActivity(
@@ -293,7 +318,8 @@ private fun LockScreenThemeCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isAvailable = theme == LockScreenTheme.FLOATING_VINYL || theme == LockScreenTheme.SLEEVE || theme == LockScreenTheme.WAVEFORM || theme == LockScreenTheme.POLAROID
+    val isAvailable = theme == LockScreenTheme.FLOATING_VINYL || theme == LockScreenTheme.SLEEVE ||
+        theme == LockScreenTheme.WAVEFORM || theme == LockScreenTheme.POLAROID || theme == LockScreenTheme.NEON
     val previewColor = when (theme) {
         LockScreenTheme.FLOATING_VINYL -> Color(0xFF080810)
         LockScreenTheme.SLEEVE         -> Color(0xFF1C1410)

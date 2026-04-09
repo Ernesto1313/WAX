@@ -232,6 +232,17 @@ private fun LockScreenContent(
             onPrevious  = onPrevious,
             onDismiss   = onDismiss
         )
+        LockScreenTheme.NEON -> NeonThemeScreen(
+            coverUrl    = state.coverUrl,
+            trackTitle  = state.trackTitle ?: "",
+            artistName  = state.artistName ?: "",
+            rotation    = rotation.value,
+            isPlaying   = state.isPlaying,
+            onPlayPause = onPlayPause,
+            onNext      = onNext,
+            onPrevious  = onPrevious,
+            onDismiss   = onDismiss
+        )
         else -> FloatingVinylScreen(
             state       = state,
             onPlayPause = onPlayPause,
@@ -1204,5 +1215,284 @@ private fun MiniSpinningDisc(
 
         // Center spindle hole
         drawCircle(color = Color(0xFF1A1A1A), radius = 2.dp.toPx(), center = center)
+    }
+}
+
+// ── Neon theme ─────────────────────────────────────────────────────────────────
+
+private val NeonBlack = Color(0xFF000000)
+private val NeonCyan  = Color(0xFF00FFE5)
+
+@Composable
+private fun NeonThemeScreen(
+    coverUrl: String,
+    trackTitle: String,
+    artistName: String,
+    rotation: Float,
+    isPlaying: Boolean,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var swipeDelta by remember { mutableFloatStateOf(0f) }
+    val neonColor = NeonCyan
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(NeonBlack)
+            .pointerInput(Unit) {
+                detectVerticalDragGestures(
+                    onVerticalDrag = { _, dy -> swipeDelta += dy },
+                    onDragEnd = {
+                        if (swipeDelta < -120.dp.toPx()) onDismiss()
+                        swipeDelta = 0f
+                    },
+                    onDragCancel = { swipeDelta = 0f }
+                )
+            }
+    ) {
+        val artSize   = maxWidth * 0.55f
+        val vinylSize = maxWidth * 0.30f
+
+        // Content column
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .systemBarsPadding()
+                .padding(bottom = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // 1. Clock in neon cyan
+            NeonClock(neonColor = neonColor)
+
+            // 2. Album art with layered neon glow
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier         = Modifier.size(artSize + 40.dp)
+            ) {
+                // Glow rings drawn behind the art
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val c    = Offset(size.width / 2f, size.height / 2f)
+                    val artR = artSize.toPx() / 2f
+                    // Outermost glow (faintest)
+                    drawCircle(
+                        color  = neonColor.copy(alpha = 0.03f),
+                        radius = artR + 16.dp.toPx(),
+                        center = c,
+                        style  = Stroke(width = 14.dp.toPx())
+                    )
+                    // Middle glow
+                    drawCircle(
+                        color  = neonColor.copy(alpha = 0.08f),
+                        radius = artR + 7.dp.toPx(),
+                        center = c,
+                        style  = Stroke(width = 8.dp.toPx())
+                    )
+                    // Inner glow (brightest)
+                    drawCircle(
+                        color  = neonColor.copy(alpha = 0.15f),
+                        radius = artR + 2.dp.toPx(),
+                        center = c,
+                        style  = Stroke(width = 4.dp.toPx())
+                    )
+                }
+                // Album art with solid 2dp neon border
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(coverUrl)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = "Album art",
+                    contentScale       = ContentScale.Crop,
+                    modifier           = Modifier
+                        .size(artSize)
+                        .border(2.dp, neonColor, CircleShape)
+                        .clip(CircleShape)
+                )
+            }
+
+            // 3. Small spinning vinyl with neon grooves
+            NeonVinyl(
+                rotation  = rotation,
+                neonColor = neonColor,
+                modifier  = Modifier.size(vinylSize)
+            )
+
+            // 4. Track info
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text          = trackTitle,
+                    color         = neonColor,
+                    fontSize      = 18.sp,
+                    fontWeight    = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                    maxLines      = 1,
+                    overflow      = TextOverflow.Ellipsis,
+                    textAlign     = TextAlign.Center,
+                    modifier      = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 32.dp)
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text      = artistName,
+                    color     = Color.White.copy(alpha = 0.5f),
+                    fontSize  = 13.sp,
+                    maxLines  = 1,
+                    overflow  = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier  = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 32.dp)
+                )
+            }
+
+            // 5. Controls with neon accent
+            NeonControls(
+                isPlaying   = isPlaying,
+                onPlayPause = onPlayPause,
+                onNext      = onNext,
+                onPrevious  = onPrevious,
+                neonColor   = neonColor
+            )
+
+            // 6. Dismiss hint
+            Text(
+                text          = "↑   swipe up to dismiss",
+                color         = neonColor.copy(alpha = 0.5f),
+                fontSize      = 10.sp,
+                letterSpacing = 1.5.sp,
+                fontWeight    = FontWeight.Light
+            )
+        }
+
+        // CRT scanline overlay — subtle horizontal lines at 4px pitch
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            var y = 0f
+            while (y < size.height) {
+                drawLine(
+                    color       = Color.Black.copy(alpha = 0.04f),
+                    start       = Offset(0f, y),
+                    end         = Offset(size.width, y),
+                    strokeWidth = 1f
+                )
+                y += 4f
+            }
+        }
+    }
+}
+
+// ── Neon clock ─────────────────────────────────────────────────────────────────
+
+@Composable
+private fun NeonClock(neonColor: Color) {
+    var time by remember { mutableStateOf(LocalTime.now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_000)
+            time = LocalTime.now()
+        }
+    }
+    Text(
+        text          = time.format(DateTimeFormatter.ofPattern("HH:mm")),
+        color         = neonColor,
+        fontSize      = 48.sp,
+        fontWeight    = FontWeight.Light,
+        letterSpacing = (-2).sp,
+        modifier      = Modifier.padding(top = 16.dp)
+    )
+}
+
+// ── Neon spinning vinyl ────────────────────────────────────────────────────────
+
+@Composable
+private fun NeonVinyl(
+    rotation: Float,
+    neonColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier         = modifier.rotate(rotation)
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val r      = size.minDimension / 2f
+            val center = Offset(size.width / 2f, size.height / 2f)
+
+            // Body
+            drawCircle(color = Color(0xFF0A0A0A), radius = r, center = center)
+
+            // Neon groove rings
+            val grooveCount = 10
+            repeat(grooveCount) { i ->
+                val t       = (i + 1).toFloat() / (grooveCount + 1)
+                val grooveR = r * 0.42f + r * 0.50f * t
+                drawCircle(
+                    color  = neonColor.copy(alpha = 0.20f),
+                    radius = grooveR,
+                    center = center,
+                    style  = Stroke(width = 0.8.dp.toPx())
+                )
+            }
+
+            // Label circle
+            drawCircle(color = Color(0xFF0D0D0D), radius = r * 0.32f, center = center)
+
+            // Center hole
+            drawCircle(color = NeonBlack, radius = 2.5.dp.toPx(), center = center)
+        }
+    }
+}
+
+// ── Neon controls ──────────────────────────────────────────────────────────────
+
+@Composable
+private fun NeonControls(
+    isPlaying: Boolean,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    neonColor: Color
+) {
+    Row(
+        verticalAlignment     = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(36.dp)
+    ) {
+        IconButton(onClick = onPrevious) {
+            Icon(
+                imageVector        = Icons.Rounded.SkipPrevious,
+                contentDescription = "Previous",
+                tint               = Color.White,
+                modifier           = Modifier.size(34.dp)
+            )
+        }
+
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(52.dp)
+                .background(NeonBlack, CircleShape)
+                .border(2.dp, neonColor, CircleShape)
+                .clickable(onClick = onPlayPause)
+        ) {
+            Icon(
+                imageVector        = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                contentDescription = if (isPlaying) "Pause" else "Play",
+                tint               = neonColor,
+                modifier           = Modifier.size(26.dp)
+            )
+        }
+
+        IconButton(onClick = onNext) {
+            Icon(
+                imageVector        = Icons.Rounded.SkipNext,
+                contentDescription = "Next",
+                tint               = Color.White,
+                modifier           = Modifier.size(34.dp)
+            )
+        }
     }
 }
