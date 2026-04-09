@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.CircleShape
@@ -52,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -209,6 +211,17 @@ private fun LockScreenContent(
             onDismiss   = onDismiss
         )
         LockScreenTheme.WAVEFORM -> WaveformThemeScreen(
+            coverUrl    = state.coverUrl,
+            trackTitle  = state.trackTitle ?: "",
+            artistName  = state.artistName ?: "",
+            rotation    = rotation.value,
+            isPlaying   = state.isPlaying,
+            onPlayPause = onPlayPause,
+            onNext      = onNext,
+            onPrevious  = onPrevious,
+            onDismiss   = onDismiss
+        )
+        LockScreenTheme.POLAROID -> PolaroidThemeScreen(
             coverUrl    = state.coverUrl,
             trackTitle  = state.trackTitle ?: "",
             artistName  = state.artistName ?: "",
@@ -1011,5 +1024,185 @@ private fun WaveformControls(
                 modifier           = Modifier.size(34.dp)
             )
         }
+    }
+}
+
+// ── Polaroid theme ─────────────────────────────────────────────────────────────
+
+@Composable
+private fun PolaroidThemeScreen(
+    coverUrl: String,
+    trackTitle: String,
+    artistName: String,
+    @Suppress("UNUSED_PARAMETER") rotation: Float,
+    isPlaying: Boolean,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var swipeDelta by remember { mutableFloatStateOf(0f) }
+
+    // Card tilt seeded by track title: deterministic value in [-3, +3] degrees
+    val cardTilt = remember(trackTitle) {
+        val h = trackTitle.hashCode()
+        ((h % 7 + 7) % 7).toFloat() - 3f
+    }
+
+    // Spinning mini-disc rotation
+    val discRotation = remember { Animatable(0f) }
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            while (true) {
+                discRotation.animateTo(
+                    targetValue   = discRotation.value + 360f,
+                    animationSpec = tween(durationMillis = 2000, easing = LinearEasing)
+                )
+                discRotation.snapTo(discRotation.value % 360f)
+            }
+        }
+    }
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(LockBg)
+            .pointerInput(Unit) {
+                detectVerticalDragGestures(
+                    onVerticalDrag = { _, dy -> swipeDelta += dy },
+                    onDragEnd = {
+                        if (swipeDelta < -120.dp.toPx()) onDismiss()
+                        swipeDelta = 0f
+                    },
+                    onDragCancel = { swipeDelta = 0f }
+                )
+            }
+    ) {
+        val cardWidth = maxWidth * 0.72f
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .systemBarsPadding()
+                .padding(bottom = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // 1. Clock
+            SleeveClockWidget()
+
+            // 2. Polaroid card
+            Box(
+                modifier = Modifier
+                    .rotate(cardTilt)
+                    .shadow(elevation = 16.dp)
+                    .width(cardWidth)
+                    .background(Color.White)
+            ) {
+                Column {
+                    // Album art — square, fills top ~80% of card
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(coverUrl)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Album art",
+                        contentScale       = ContentScale.Crop,
+                        modifier           = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                    )
+
+                    // White label area — bottom ~20%
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.White)
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Row(
+                            verticalAlignment     = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text       = trackTitle,
+                                color      = Color(0xFF1A1A1A),
+                                fontSize   = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines   = 1,
+                                overflow   = TextOverflow.Ellipsis,
+                                modifier   = Modifier.weight(1f)
+                            )
+                            if (isPlaying) {
+                                MiniSpinningDisc(
+                                    rotation = discRotation.value,
+                                    modifier = Modifier.size(40.dp)
+                                )
+                            }
+                        }
+                        Text(
+                            text     = artistName,
+                            color    = Color(0xFF888888),
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+
+            // 3. Controls
+            LockControls(
+                isPlaying   = isPlaying,
+                onPlayPause = onPlayPause,
+                onNext      = onNext,
+                onPrevious  = onPrevious
+            )
+
+            // 4. Dismiss hint
+            Text(
+                text          = "↑   swipe up to dismiss",
+                color         = Color.White.copy(alpha = 0.25f),
+                fontSize      = 11.sp,
+                letterSpacing = 1.5.sp,
+                fontWeight    = FontWeight.Light
+            )
+        }
+    }
+}
+
+// ── Mini spinning disc (Polaroid vinyl indicator) ──────────────────────────────
+
+@Composable
+private fun MiniSpinningDisc(
+    rotation: Float,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier.rotate(rotation)) {
+        val r      = size.minDimension / 2f
+        val center = Offset(size.width / 2f, size.height / 2f)
+
+        // Body
+        drawCircle(color = Color(0xFF1A1A1A), radius = r, center = center)
+
+        // Groove rings
+        val grooveCount = 6
+        repeat(grooveCount) { i ->
+            val t       = (i + 1).toFloat() / (grooveCount + 1)
+            val grooveR = r * 0.38f + r * 0.55f * t
+            drawCircle(
+                color  = Color.White.copy(alpha = 0.14f),
+                radius = grooveR,
+                center = center,
+                style  = Stroke(width = 0.8.dp.toPx())
+            )
+        }
+
+        // Label circle
+        drawCircle(color = Color(0xFF333333), radius = r * 0.32f, center = center)
+
+        // Center spindle hole
+        drawCircle(color = Color(0xFF1A1A1A), radius = 2.dp.toPx(), center = center)
     }
 }
