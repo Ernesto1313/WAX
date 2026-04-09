@@ -14,6 +14,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -58,6 +59,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -89,6 +91,8 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
+import kotlin.math.PI
+import kotlin.math.sin
 
 private val LockBg    = Color(0xFF080810)
 private val VinylBody = Color(0xFF0D0D0D)
@@ -194,6 +198,17 @@ private fun LockScreenContent(
 
     when (theme) {
         LockScreenTheme.SLEEVE -> SleeveThemeScreen(
+            coverUrl    = state.coverUrl,
+            trackTitle  = state.trackTitle ?: "",
+            artistName  = state.artistName ?: "",
+            rotation    = rotation.value,
+            isPlaying   = state.isPlaying,
+            onPlayPause = onPlayPause,
+            onNext      = onNext,
+            onPrevious  = onPrevious,
+            onDismiss   = onDismiss
+        )
+        LockScreenTheme.WAVEFORM -> WaveformThemeScreen(
             coverUrl    = state.coverUrl,
             trackTitle  = state.trackTitle ?: "",
             artistName  = state.artistName ?: "",
@@ -741,5 +756,260 @@ private fun LockClock() {
             fontSize   = 13.sp,
             fontWeight = FontWeight.Normal
         )
+    }
+}
+
+// ── Waveform theme ─────────────────────────────────────────────────────────────
+
+private const val WAVE_BAR_COUNT = 40
+private val TWO_PI = (2.0 * PI).toFloat()
+
+@Composable
+private fun WaveformThemeScreen(
+    coverUrl: String,
+    trackTitle: String,
+    artistName: String,
+    @Suppress("UNUSED_PARAMETER") rotation: Float,
+    isPlaying: Boolean,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var swipeDelta by remember { mutableFloatStateOf(0f) }
+    val phase     = remember { Animatable(0f) }
+    val amplitude = remember { Animatable(0f) }
+
+    // Smooth collapse / expand when play state changes
+    LaunchedEffect(isPlaying) {
+        amplitude.animateTo(
+            targetValue   = if (isPlaying) 1f else 0f,
+            animationSpec = tween(durationMillis = 500)
+        )
+    }
+    // Continuously advance the wave phase while playing
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            while (true) {
+                phase.animateTo(
+                    targetValue   = phase.value + TWO_PI,
+                    animationSpec = tween(durationMillis = 1400, easing = LinearEasing)
+                )
+                phase.snapTo(phase.value % TWO_PI)
+            }
+        }
+    }
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(LockBg)
+            .pointerInput(Unit) {
+                detectVerticalDragGestures(
+                    onVerticalDrag = { _, dy -> swipeDelta += dy },
+                    onDragEnd = {
+                        if (swipeDelta < -120.dp.toPx()) onDismiss()
+                        swipeDelta = 0f
+                    },
+                    onDragCancel = { swipeDelta = 0f }
+                )
+            }
+    ) {
+        val artSize = maxWidth * 0.60f
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .systemBarsPadding()
+                .padding(bottom = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // 1. Clock
+            SleeveClockWidget()
+
+            // 2. Waveforms flanking the album circle
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                // Top waveform — bars hang downward (mirrored)
+                WaveformBars(
+                    phase     = phase.value,
+                    amplitude = amplitude.value,
+                    flipped   = true,
+                    modifier  = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp)
+                        .padding(horizontal = 20.dp)
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+                // Album art circle with thin border
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(artSize)
+                ) {
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(coverUrl)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Album art",
+                        contentScale       = ContentScale.Crop,
+                        modifier           = Modifier
+                            .fillMaxSize()
+                            .border(1.5.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+                            .clip(CircleShape)
+                    )
+                }
+
+                Spacer(Modifier.height(4.dp))
+
+                // Bottom waveform — bars grow upward (normal)
+                WaveformBars(
+                    phase     = phase.value,
+                    amplitude = amplitude.value,
+                    flipped   = false,
+                    modifier  = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp)
+                        .padding(horizontal = 20.dp)
+                )
+            }
+
+            // 3. Track info
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text       = trackTitle,
+                    color      = Color.White,
+                    fontSize   = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines   = 1,
+                    overflow   = TextOverflow.Ellipsis,
+                    textAlign  = TextAlign.Center,
+                    modifier   = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 32.dp)
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text      = artistName,
+                    color     = Color.White.copy(alpha = 0.55f),
+                    fontSize  = 13.sp,
+                    maxLines  = 1,
+                    overflow  = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier  = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 32.dp)
+                )
+            }
+
+            // 4. Controls
+            WaveformControls(
+                isPlaying   = isPlaying,
+                onPlayPause = onPlayPause,
+                onNext      = onNext,
+                onPrevious  = onPrevious
+            )
+
+            // 5. Dismiss hint
+            Text(
+                text          = "↑   swipe up to dismiss",
+                color         = Color.White.copy(alpha = 0.25f),
+                fontSize      = 11.sp,
+                letterSpacing = 1.5.sp,
+                fontWeight    = FontWeight.Light
+            )
+        }
+    }
+}
+
+// ── Waveform bar canvas ────────────────────────────────────────────────────────
+
+@Composable
+private fun WaveformBars(
+    phase: Float,
+    amplitude: Float,
+    flipped: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val barWidthPx = 3.dp.toPx()
+        val gapPx      = 4.dp.toPx()
+        val stepPx     = barWidthPx + gapPx
+        val totalW     = WAVE_BAR_COUNT * stepPx - gapPx
+        val startX     = (size.width - totalW) / 2f
+        val maxH       = size.height
+        val minH       = 2.dp.toPx()
+
+        repeat(WAVE_BAR_COUNT) { i ->
+            val t = i.toFloat() / WAVE_BAR_COUNT
+            // Two overlapping sine waves at different frequencies for organic feel
+            val wave1 = sin(phase + t * TWO_PI * 2.0).toFloat()
+            val wave2 = sin(phase * 1.5f + t * TWO_PI * 3.5f + 1.0).toFloat()
+            val wave  = wave1 * 0.65f + wave2 * 0.35f           // range ≈ [-1, 1]
+            val frac  = wave * 0.5f + 0.5f                       // range [0, 1]
+            val barH  = (minH + (maxH - minH) * frac) * amplitude + minH * (1f - amplitude)
+
+            val x      = startX + i * stepPx + barWidthPx / 2f
+            val startY = if (flipped) 0f              else size.height - barH
+            val endY   = if (flipped) barH             else size.height
+
+            drawLine(
+                color       = Color.White.copy(alpha = 0.6f),
+                start       = Offset(x, startY),
+                end         = Offset(x, endY),
+                strokeWidth = barWidthPx,
+                cap         = StrokeCap.Round
+            )
+        }
+    }
+}
+
+// ── Waveform controls ──────────────────────────────────────────────────────────
+
+@Composable
+private fun WaveformControls(
+    isPlaying: Boolean,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit
+) {
+    Row(
+        verticalAlignment     = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(36.dp)
+    ) {
+        IconButton(onClick = onPrevious) {
+            Icon(
+                imageVector        = Icons.Rounded.SkipPrevious,
+                contentDescription = "Previous",
+                tint               = Color.White,
+                modifier           = Modifier.size(34.dp)
+            )
+        }
+
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(48.dp)
+                .background(Color.White, CircleShape)
+                .clickable(onClick = onPlayPause)
+        ) {
+            Icon(
+                imageVector        = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                contentDescription = if (isPlaying) "Pause" else "Play",
+                tint               = LockBg,
+                modifier           = Modifier.size(24.dp)
+            )
+        }
+
+        IconButton(onClick = onNext) {
+            Icon(
+                imageVector        = Icons.Rounded.SkipNext,
+                contentDescription = "Next",
+                tint               = Color.White,
+                modifier           = Modifier.size(34.dp)
+            )
+        }
     }
 }
