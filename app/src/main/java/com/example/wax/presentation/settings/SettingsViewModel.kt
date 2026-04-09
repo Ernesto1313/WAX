@@ -11,7 +11,7 @@ import androidx.work.WorkManager
 import com.example.wax.core.auth.TokenManager
 import com.example.wax.core.preferences.UserPreferencesRepository
 import com.example.wax.core.work.WeeklyAlbumWorker
-import com.example.wax.domain.model.TurntableSkin
+import com.example.wax.domain.model.LockScreenTheme
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -26,11 +26,11 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 data class SettingsUiState(
-    val selectedSkin: TurntableSkin = TurntableSkin.DARK,
     val isSpotifyConnected: Boolean = false,
     val weeklyNotifEnabled: Boolean = true,
     val hasNotificationAccess: Boolean = false,
-    val hasOverlayPermission: Boolean = false
+    val hasOverlayPermission: Boolean = false,
+    val lockScreenTheme: LockScreenTheme = LockScreenTheme.FLOATING_VINYL
 )
 
 sealed class SettingsEvent {
@@ -51,21 +51,13 @@ class SettingsViewModel @Inject constructor(
     val events: SharedFlow<SettingsEvent> = _events.asSharedFlow()
 
     init {
-        collectSkin()
         collectWeeklyNotif()
+        collectLockScreenTheme()
         checkSpotifyConnection()
         refreshOverlayPermission()
     }
 
     // ── Init collectors ───────────────────────────────────────────────────────
-
-    private fun collectSkin() {
-        viewModelScope.launch {
-            userPreferencesRepository.turntableSkin.collect { skin ->
-                _uiState.update { it.copy(selectedSkin = skin) }
-            }
-        }
-    }
 
     private fun collectWeeklyNotif() {
         viewModelScope.launch {
@@ -79,6 +71,14 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             val connected = tokenManager.getRefreshToken() != null
             _uiState.update { it.copy(isSpotifyConnected = connected) }
+        }
+    }
+
+    private fun collectLockScreenTheme() {
+        viewModelScope.launch {
+            userPreferencesRepository.lockScreenTheme.collect { theme ->
+                _uiState.update { it.copy(lockScreenTheme = theme) }
+            }
         }
     }
 
@@ -97,8 +97,8 @@ class SettingsViewModel @Inject constructor(
         _uiState.update { it.copy(hasOverlayPermission = Settings.canDrawOverlays(context)) }
     }
 
-    fun setSkin(skin: TurntableSkin) {
-        viewModelScope.launch { userPreferencesRepository.setTurntableSkin(skin) }
+    fun setLockScreenTheme(theme: LockScreenTheme) {
+        viewModelScope.launch { userPreferencesRepository.setLockScreenTheme(theme) }
     }
 
     fun setWeeklyNotifEnabled(enabled: Boolean) {

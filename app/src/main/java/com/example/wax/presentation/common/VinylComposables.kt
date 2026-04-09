@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -29,28 +30,16 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.wax.domain.model.TurntableSkin
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 private val SpindleColor = Color(0xFF0D0D0D)
 
 // ── Skin helpers ───────────────────────────────────────────────────────────────
 
-internal fun TurntableSkin.baseColor() = when (this) {
-    TurntableSkin.DARK         -> Color(0xFF0D0D0D)
-    TurntableSkin.VINTAGE_WOOD -> Color(0xFF2C1810)
-    TurntableSkin.MINIMALIST   -> Color(0xFFF0F0F0)
-}
-
-internal fun TurntableSkin.grooveColor() = when (this) {
-    TurntableSkin.DARK         -> Color.White.copy(alpha = 0.07f)
-    TurntableSkin.VINTAGE_WOOD -> Color.White.copy(alpha = 0.10f)
-    TurntableSkin.MINIMALIST   -> Color.Black.copy(alpha = 0.08f)
-}
-
-internal fun TurntableSkin.labelColor() = when (this) {
-    TurntableSkin.DARK         -> Color(0xFF1C1C1C)
-    TurntableSkin.VINTAGE_WOOD -> Color(0xFF3B2418)
-    TurntableSkin.MINIMALIST   -> Color(0xFFE0E0E0)
-}
+internal fun TurntableSkin.baseColor()  = Color(0xFF0D0D0D)
+internal fun TurntableSkin.labelColor() = Color(0xFF1C1C1C)
 
 // ── Turntable section ─────────────────────────────────────────────────────────
 
@@ -62,6 +51,7 @@ internal fun TurntableSection(
     isPlaying: Boolean,
     isSessionActive: Boolean,
     turntableSkin: TurntableSkin,
+    labelRadiusFraction: Float = 0.28f,
     modifier: Modifier = Modifier
 ) {
     val shouldSpin = !isSessionActive || isPlaying
@@ -96,17 +86,17 @@ internal fun TurntableSection(
                     .rotate(rotation.value)
             ) {
                 VinylCanvas(
-                    dominantColor   = vinylDominantColor,
-                    vibrantColor    = vinylVibrantColor,
-                    skinBaseColor   = turntableSkin.baseColor(),
-                    skinGrooveColor = turntableSkin.grooveColor(),
-                    skinLabelColor  = turntableSkin.labelColor(),
-                    modifier        = Modifier.fillMaxSize()
+                    dominantColor        = vinylDominantColor,
+                    vibrantColor         = vinylVibrantColor,
+                    skinBaseColor        = turntableSkin.baseColor(),
+                    skinLabelColor       = turntableSkin.labelColor(),
+                    labelRadiusFraction  = labelRadiusFraction,
+                    modifier             = Modifier.fillMaxSize()
                 )
                 AlbumArtLabel(
                     coverUrl = coverUrl,
                     modifier = Modifier
-                        .size(vinylSize * 0.28f)
+                        .size(vinylSize * labelRadiusFraction)
                         .clip(CircleShape)
                 )
                 Box(
@@ -127,72 +117,126 @@ internal fun VinylCanvas(
     dominantColor: Color,
     vibrantColor: Color,
     skinBaseColor: Color,
-    skinGrooveColor: Color,
     skinLabelColor: Color,
+    labelRadiusFraction: Float = 0.28f,
     modifier: Modifier = Modifier
 ) {
     Canvas(modifier = modifier) {
         val cx = size.width / 2f
         val cy = size.height / 2f
-        val r = size.minDimension / 2f
-        val center = Offset(cx, cy)
-        val labelRadius = r * 0.28f
+        val r  = size.minDimension / 2f
+        val center      = Offset(cx, cy)
+        val labelRadius = r * labelRadiusFraction
         val grooveStart = labelRadius + 2.dp.toPx()
         val grooveEnd   = r - 3.dp.toPx()
 
-        val vinylBase = lerp(skinBaseColor, dominantColor, 0.15f)
-        drawCircle(color = vinylBase, radius = r, center = center)
-
-        drawCircle(
-            brush = Brush.sweepGradient(
-                colorStops = arrayOf(
-                    0.00f to Color.Transparent,
-                    0.18f to vibrantColor.copy(alpha = 0.20f),
-                    0.45f to Color.Transparent,
-                    0.65f to vibrantColor.copy(alpha = 0.10f),
-                    1.00f to Color.Transparent
-                ),
-                center = center
-            ),
-            radius = r,
-            center = center
-        )
-
-        val grooveCount = 44
-        repeat(grooveCount) { i ->
-            val t = i.toFloat() / grooveCount
-            val grooveR = grooveStart + (grooveEnd - grooveStart) * t
-            val strokePx = if (i % 3 == 0) 1.8.dp.toPx() else 0.9.dp.toPx()
-            drawCircle(
-                color = skinGrooveColor,
-                radius = grooveR,
-                center = center,
-                style = Stroke(width = strokePx)
-            )
-        }
-
-        val midR = (grooveStart + grooveEnd) / 2f
-        val iridSpacing = (grooveEnd - grooveStart) * 0.07f
-        for (k in -1..1) {
-            drawCircle(
-                color = vibrantColor.copy(alpha = 0.05f),
-                radius = midR + k * iridSpacing,
-                center = center,
-                style = Stroke(width = 2.2.dp.toPx())
-            )
-        }
-
+        // ── 1. BASE BODY ──────────────────────────────────────────────────────
+        // Radial gradient from slightly-lit center to pure black edge,
+        // both tinted 15%/5% toward the album's dominant color.
+        val vinylCenter = lerp(Color(0xFF1A1A1A), dominantColor, 0.15f)
+        val vinylEdge   = lerp(Color(0xFF000000), dominantColor, 0.05f)
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(Color.White.copy(alpha = 0.08f), Color.Transparent),
-                center = Offset(cx - r * 0.30f, cy - r * 0.38f),
-                radius = r * 0.62f
+                colors = listOf(vinylCenter, vinylEdge),
+                center = center,
+                radius = r
             ),
             radius = r,
             center = center
         )
 
+        // ── 2. GROOVE RINGS ───────────────────────────────────────────────────
+        // 55 concentric rings; stroke alternates 1.2 / 0.7 dp every 3 rings,
+        // alpha oscillates between 0.06 and 0.12 via a seeded sin wave.
+        val grooveCount = 55
+        repeat(grooveCount) { i ->
+            val t       = i.toFloat() / (grooveCount - 1)
+            val grooveR = grooveStart + (grooveEnd - grooveStart) * t
+            val strokePx = if (i % 3 == 0) 1.2.dp.toPx() else 0.7.dp.toPx()
+            val alpha   = 0.06f + (sin(i * 0.7) * 0.5 + 0.5).toFloat() * 0.06f
+            drawCircle(
+                color  = Color.White.copy(alpha = alpha),
+                radius = grooveR,
+                center = center,
+                style  = Stroke(width = strokePx)
+            )
+        }
+
+        // ── 3. RADIAL MICRO-TEXTURE ───────────────────────────────────────────
+        // 80 hairline spokes from the label edge to 90% of the disc radius,
+        // simulating the microscopic groove texture visible on real vinyl.
+        val twoPi = (2.0 * PI).toFloat()
+        repeat(80) { i ->
+            val angle = (i.toFloat() / 80f) * twoPi
+            val cosA  = cos(angle.toDouble()).toFloat()
+            val sinA  = sin(angle.toDouble()).toFloat()
+            drawLine(
+                color       = Color.White.copy(alpha = 0.03f),
+                start       = Offset(cx + labelRadius * cosA, cy + labelRadius * sinA),
+                end         = Offset(cx + r * 0.9f * cosA,   cy + r * 0.9f * sinA),
+                strokeWidth = 0.3.dp.toPx()
+            )
+        }
+
+        // ── 4. IRIDESCENT SHIMMER ─────────────────────────────────────────────
+        // Three arc sweeps at 60 / 70 / 80 % radius, staggered 40° apart,
+        // using the album's vibrant color at very low alpha to mimic the
+        // rainbow iridescence real vinyl shows under direct light.
+        val shimmerRadii  = listOf(r * 0.60f, r * 0.70f, r * 0.80f)
+        val shimmerAngles = listOf(-30f, 10f, 50f)
+        val shimmerAlphas = listOf(0.07f, 0.05f, 0.04f)
+        shimmerRadii.forEachIndexed { i, shimmerR ->
+            drawArc(
+                color      = vibrantColor.copy(alpha = shimmerAlphas[i]),
+                startAngle = shimmerAngles[i],
+                sweepAngle = 60f,
+                useCenter  = false,
+                topLeft    = Offset(cx - shimmerR, cy - shimmerR),
+                size       = Size(shimmerR * 2f, shimmerR * 2f),
+                style      = Stroke(width = 3.dp.toPx())
+            )
+        }
+
+        // ── 5. DIRECTIONAL HIGHLIGHT ──────────────────────────────────────────
+        // Soft white radial gradient anchored at upper-left, simulating a
+        // single overhead light source reflecting off the disc surface.
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(Color.White.copy(alpha = 0.12f), Color.Transparent),
+                center = Offset(cx - r * 0.35f, cy - r * 0.40f),
+                radius = r * 0.70f
+            ),
+            radius = r,
+            center = center
+        )
+
+        // ── 6. EDGE DARKENING ─────────────────────────────────────────────────
+        // Transparent from center to 92% of the radius, then fades to near-
+        // black at the rim — gives the disc physical depth and a pressed edge.
+        drawCircle(
+            brush = Brush.radialGradient(
+                colorStops = arrayOf(
+                    0.00f to Color.Transparent,
+                    0.92f to Color.Transparent,
+                    1.00f to Color.Black.copy(alpha = 0.60f)
+                ),
+                center = center,
+                radius = r
+            ),
+            radius = r,
+            center = center
+        )
+
+        // ── 7. CENTER LABEL ───────────────────────────────────────────────────
+        // Flat label disc + a thin inner shadow ring that separates it from
+        // the groove area and gives the edge a slight pressed-in appearance.
         drawCircle(color = skinLabelColor, radius = labelRadius, center = center)
+        drawCircle(
+            color  = Color.Black.copy(alpha = 0.40f),
+            radius = labelRadius,
+            center = center,
+            style  = Stroke(width = 2.dp.toPx())
+        )
     }
 }
 

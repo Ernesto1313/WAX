@@ -5,7 +5,11 @@
       "Bash(grep -E \"\\\\.\\(kt|xml\\)$\")",
       "Bash(grep -v '^[[:space:]]*$')",
       "Bash(./gradlew compileDebugKotlin)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(git rm:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }

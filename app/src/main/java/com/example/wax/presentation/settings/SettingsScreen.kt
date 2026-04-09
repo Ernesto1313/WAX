@@ -9,16 +9,17 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -37,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -48,7 +50,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.wax.BuildConfig
-import com.example.wax.domain.model.TurntableSkin
+import com.example.wax.domain.model.LockScreenTheme
 
 private val BackgroundColor = Color(0xFF0D0D0D)
 private val SurfaceColor    = Color(0xFF1A1A1A)
@@ -104,21 +106,21 @@ fun SettingsScreen(
         HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
         Spacer(Modifier.height(8.dp))
 
-        // ── Turntable Skin ────────────────────────────────────────────────────
-        SectionHeader("Turntable Skin")
+        // ── Lock Screen Style ─────────────────────────────────────────────────
+        SectionHeader("Lock Screen Style")
 
-        Row(
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(vertical = 8.dp)
         ) {
-            TurntableSkin.entries.forEach { skin ->
-                SkinCard(
-                    skin = skin,
-                    selected = uiState.selectedSkin == skin,
-                    onClick = { viewModel.setSkin(skin) },
-                    modifier = Modifier.weight(1f)
+            items(LockScreenTheme.entries) { theme ->
+                LockScreenThemeCard(
+                    theme    = theme,
+                    selected = uiState.lockScreenTheme == theme,
+                    onClick  = { viewModel.setLockScreenTheme(theme) }
                 )
             }
         }
@@ -282,33 +284,27 @@ fun SettingsScreen(
     }
 }
 
-// ── Skin preview card ──────────────────────────────────────────────────────────
+// ── Lock screen theme card ─────────────────────────────────────────────────────
 
 @Composable
-private fun SkinCard(
-    skin: TurntableSkin,
+private fun LockScreenThemeCard(
+    theme: LockScreenTheme,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val baseColor = when (skin) {
-        TurntableSkin.DARK         -> Color(0xFF0D0D0D)
-        TurntableSkin.VINTAGE_WOOD -> Color(0xFF2C1810)
-        TurntableSkin.MINIMALIST   -> Color(0xFFF0F0F0)
-    }
-    val accentColor = when (skin) {
-        TurntableSkin.DARK         -> Color(0xFF2A2A2A)
-        TurntableSkin.VINTAGE_WOOD -> Color(0xFFC87941)
-        TurntableSkin.MINIMALIST   -> Color(0xFFBBBBBB)
-    }
-    val label = when (skin) {
-        TurntableSkin.DARK         -> "Dark"
-        TurntableSkin.VINTAGE_WOOD -> "Vintage"
-        TurntableSkin.MINIMALIST   -> "Minimal"
+    val isAvailable = theme == LockScreenTheme.FLOATING_VINYL
+    val previewColor = when (theme) {
+        LockScreenTheme.FLOATING_VINYL -> Color(0xFF080810)
+        LockScreenTheme.SLEEVE         -> Color(0xFF1C1410)
+        LockScreenTheme.WAVEFORM       -> Color(0xFF080820)
+        LockScreenTheme.POLAROID       -> Color(0xFF1E1E1A)
+        LockScreenTheme.NEON           -> Color(0xFF100816)
     }
 
     Column(
         modifier = modifier
+            .width(90.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(SurfaceColor)
             .border(
@@ -316,30 +312,34 @@ private fun SkinCard(
                 color = if (selected) SpotifyGreen else Color.White.copy(alpha = 0.10f),
                 shape = RoundedCornerShape(12.dp)
             )
-            .clickable(onClick = onClick)
-            .padding(12.dp),
+            .clickable(enabled = isAvailable, onClick = onClick)
+            .padding(10.dp)
+            .alpha(if (isAvailable) 1f else 0.45f),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // Mini vinyl preview
         Box(
             modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(baseColor),
+                .fillMaxWidth()
+                .height(58.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(previewColor),
             contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(18.dp)
-                    .clip(CircleShape)
-                    .background(accentColor)
-            )
+            if (!isAvailable) {
+                Text(
+                    text       = "Soon",
+                    color      = Color.White.copy(alpha = 0.45f),
+                    fontSize   = 10.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 0.5.sp
+                )
+            }
         }
         Text(
-            text = label,
-            color = if (selected) SpotifyGreen else Color.White,
-            fontSize = 12.sp,
+            text       = theme.displayName,
+            color      = if (selected) SpotifyGreen else if (isAvailable) Color.White else TextSecondary,
+            fontSize   = 11.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
         )
     }

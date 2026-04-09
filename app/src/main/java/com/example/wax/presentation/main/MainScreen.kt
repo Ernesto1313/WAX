@@ -47,6 +47,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -70,6 +71,7 @@ import coil.request.ImageRequest
 import com.example.wax.domain.model.Track
 import com.example.wax.domain.model.TurntableSkin
 import com.example.wax.presentation.common.TurntableSection
+
 
 private val SpotifyGreen    = Color(0xFF1DB954)
 private val BackgroundColor = Color(0xFF0D0D0D)
@@ -110,14 +112,18 @@ fun MainScreen(
         contentWindowInsets = WindowInsets(0)
     ) { scaffoldPadding ->
 
+        val scaffoldState = rememberBottomSheetScaffoldState()
+        val isSheetExpanded = scaffoldState.bottomSheetState.currentValue == SheetValue.Expanded
+
         BottomSheetScaffold(
-            scaffoldState = rememberBottomSheetScaffoldState(),
+            scaffoldState = scaffoldState,
             sheetContent = {
                 TrackListSheet(
                     tracks = uiState.album?.tracks ?: emptyList(),
                     currentTrackId = uiState.currentTrackId,
                     isPlaying = uiState.isPlaying,
                     isTracksLoading = uiState.isTracksLoading,
+                    isExpanded = isSheetExpanded,
                     onTrackClick = { track ->
                         viewModel.onTrackSelected(track.id)
                         val trackUri = Uri.parse("spotify:track:${track.id}")
@@ -133,7 +139,7 @@ fun MainScreen(
                     }
                 )
             },
-            sheetPeekHeight = 120.dp,
+            sheetPeekHeight = 28.dp,
             sheetShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
             sheetMaxWidth = Dp.Unspecified,
             containerColor = BackgroundColor,
@@ -157,7 +163,7 @@ fun MainScreen(
                     vinylVibrantColor = uiState.vinylVibrantColor,
                     isPlaying = uiState.isPlaying,
                     isSessionActive = uiState.isSessionActive,
-                    turntableSkin = uiState.turntableSkin,
+                    turntableSkin = TurntableSkin.DARK,
                     modifier = Modifier.weight(1f).fillMaxWidth()
                 )
 
@@ -325,6 +331,7 @@ private fun TrackListSheet(
     currentTrackId: String?,
     isPlaying: Boolean,
     isTracksLoading: Boolean,
+    isExpanded: Boolean,
     onTrackClick: (Track) -> Unit
 ) {
     val listState = rememberLazyListState()
@@ -334,6 +341,7 @@ private fun TrackListSheet(
             .fillMaxWidth()
             .fillMaxHeight(0.75f)
     ) {
+        // Drag handle — always visible
         item {
             Box(
                 modifier = Modifier
@@ -350,19 +358,26 @@ private fun TrackListSheet(
             }
         }
 
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(text = "Tracklist", color = Color.White, fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold)
-                Spacer(modifier = Modifier.width(6.dp))
-                if (!isTracksLoading) {
-                    Text(text = "${tracks.size}", color = TextSecondary, fontSize = 13.sp)
+        // Header — only when expanded
+        if (isExpanded) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                        .padding(bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Tracklist",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    if (!isTracksLoading) {
+                        Text(text = "${tracks.size}", color = TextSecondary, fontSize = 13.sp)
+                    }
                 }
             }
         }

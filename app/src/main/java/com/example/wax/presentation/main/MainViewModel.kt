@@ -19,7 +19,6 @@ import com.example.wax.data.repository.AlbumHistoryRepository
 import com.example.wax.data.repository.SpotifyRepository
 import com.example.wax.domain.model.Album
 import com.example.wax.domain.model.Track
-import com.example.wax.domain.model.TurntableSkin
 import com.example.wax.domain.usecase.GetWeeklyAlbumUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -53,7 +52,6 @@ data class MainUiState(
     val currentTrackId: String? = null,
     val isSessionActive: Boolean = false,
     val showNotificationPrompt: Boolean = false,
-    val turntableSkin: TurntableSkin = TurntableSkin.DARK,
     // true = live from an active Spotify session, false = weekly curated pick
     val isNowPlaying: Boolean = false,
     // true while tracks are being fetched — UI shows a spinner instead of an empty list
@@ -103,7 +101,6 @@ class MainViewModel @Inject constructor(
         }
         checkAuthAndLoad()
         collectMediaSession()
-        collectSkinPreference()
         checkNotificationListenerStatus()
     }
 
@@ -225,16 +222,6 @@ class MainViewModel @Inject constructor(
     /** Called by the nav graph when the user taps a history album. */
     fun selectAlbum(album: Album) {
         _uiState.update { it.copy(album = album) }
-    }
-
-    // ── Skin preference ───────────────────────────────────────────────────────
-
-    private fun collectSkinPreference() {
-        viewModelScope.launch {
-            userPreferencesRepository.turntableSkin.collect { skin ->
-                _uiState.update { it.copy(turntableSkin = skin) }
-            }
-        }
     }
 
     // ── Notification listener prompt ──────────────────────────────────────────

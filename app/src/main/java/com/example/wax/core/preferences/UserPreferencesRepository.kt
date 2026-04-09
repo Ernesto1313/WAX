@@ -7,7 +7,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.example.wax.domain.model.TurntableSkin
+import com.example.wax.domain.model.LockScreenTheme
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -26,12 +26,12 @@ class UserPreferencesRepository @Inject constructor(
     companion object {
         private val KEY_NOTIF_LISTENER_DISMISSED =
             booleanPreferencesKey("notif_listener_dismissed")
-        private val KEY_TURNTABLE_SKIN =
-            stringPreferencesKey("turntable_skin")
         private val KEY_WEEKLY_NOTIF_ENABLED =
             booleanPreferencesKey("weekly_notif_enabled")
         private val KEY_ONBOARDING_COMPLETED =
             booleanPreferencesKey("onboarding_completed")
+        private val KEY_LOCK_SCREEN_THEME =
+            stringPreferencesKey("lock_screen_theme")
     }
 
     // ── Notification listener dismissed ──────────────────────────────────────
@@ -44,15 +44,6 @@ class UserPreferencesRepository @Inject constructor(
 
     suspend fun setNotifListenerDismissed() {
         context.userPrefsDataStore.edit { it[KEY_NOTIF_LISTENER_DISMISSED] = true }
-    }
-
-    // ── Turntable skin ────────────────────────────────────────────────────────
-
-    val turntableSkin: Flow<TurntableSkin> = context.userPrefsDataStore.data
-        .map { prefs -> TurntableSkin.fromKey(prefs[KEY_TURNTABLE_SKIN] ?: TurntableSkin.DARK.key) }
-
-    suspend fun setTurntableSkin(skin: TurntableSkin) {
-        context.userPrefsDataStore.edit { it[KEY_TURNTABLE_SKIN] = skin.key }
     }
 
     // ── Weekly notification ───────────────────────────────────────────────────
@@ -73,5 +64,16 @@ class UserPreferencesRepository @Inject constructor(
 
     suspend fun setOnboardingCompleted() {
         context.userPrefsDataStore.edit { it[KEY_ONBOARDING_COMPLETED] = true }
+    }
+
+    // ── Lock screen theme ─────────────────────────────────────────────────────
+
+    val lockScreenTheme: Flow<LockScreenTheme> = context.userPrefsDataStore.data
+        .map { prefs -> LockScreenTheme.fromKey(prefs[KEY_LOCK_SCREEN_THEME] ?: LockScreenTheme.FLOATING_VINYL.key) }
+
+    suspend fun readLockScreenTheme(): LockScreenTheme = lockScreenTheme.first()
+
+    suspend fun setLockScreenTheme(theme: LockScreenTheme) {
+        context.userPrefsDataStore.edit { it[KEY_LOCK_SCREEN_THEME] = theme.key }
     }
 }

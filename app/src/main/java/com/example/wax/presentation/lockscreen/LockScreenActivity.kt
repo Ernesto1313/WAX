@@ -9,10 +9,16 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,6 +30,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -41,22 +48,40 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.wax.MainActivity
 import com.example.wax.core.media.MediaSessionRepository
 import com.example.wax.core.media.MediaSessionState
-import com.example.wax.domain.model.TurntableSkin
-import com.example.wax.presentation.common.TurntableSection
+import com.example.wax.core.preferences.UserPreferencesRepository
+import com.example.wax.domain.model.LockScreenTheme
+import com.example.wax.presentation.common.AlbumArtLabel
+import com.example.wax.presentation.common.VinylCanvas
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -65,26 +90,20 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 
-private val BackgroundColor = Color(0xFF08080F)
-private val TextPrimary     = Color.White
-private val TextSecondary   = Color.White.copy(alpha = 0.55f)
-private val ControlOverlay  = Color.White.copy(alpha = 0.10f)
+private val LockBg    = Color(0xFF080810)
+private val VinylBody = Color(0xFF0D0D0D)
 
 @AndroidEntryPoint
 class LockScreenActivity : ComponentActivity() {
 
     @Inject lateinit var mediaSessionRepository: MediaSessionRepository
+    @Inject lateinit var userPreferencesRepository: UserPreferencesRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // All window configuration must happen before super.onCreate() so it takes effect
-        // on the first frame. On Samsung One UI the combination of TYPE_APPLICATION_OVERLAY
-        // + FLAG_SHOW_WHEN_LOCKED is what actually punches through the keyguard.
+        // All window flags before super.onCreate so they take effect on first frame.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
-            // TYPE_APPLICATION_OVERLAY lets the window sit above the keyguard on OEMs
-            // (Samsung One UI, MIUI, etc.) that ignore the standard FLAG_SHOW_WHEN_LOCKED alone.
-            // Only applied when SYSTEM_ALERT_WINDOW has been granted by the user.
             if (Settings.canDrawOverlays(this)) {
                 val lp = window.attributes
                 lp.type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -100,8 +119,8 @@ class LockScreenActivity : ComponentActivity() {
 
         super.onCreate(savedInstanceState)
 
-        // If the keyguard is not locked (user tapped notification while already unlocked),
-        // skip straight to the main app and close this activity.
+        // If the phone is already unlocked (e.g. user tapped the notification while
+        // the screen was on), skip straight to the main app.
         val km = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
         if (!km.isKeyguardLocked) {
             startActivity(
@@ -116,8 +135,11 @@ class LockScreenActivity : ComponentActivity() {
 
         setContent {
             val state by mediaSessionRepository.state.collectAsStateWithLifecycle()
+            val theme by userPreferencesRepository.lockScreenTheme
+                .collectAsStateWithLifecycle(initialValue = LockScreenTheme.FLOATING_VINYL)
             LockScreenContent(
-                state     = state,
+                state       = state,
+                theme       = theme,
                 onPlayPause = { mediaSessionRepository.sendPlayPause() },
                 onNext      = { mediaSessionRepository.sendSkipToNext() },
                 onPrevious  = { mediaSessionRepository.sendSkipToPrevious() },
@@ -125,16 +147,14 @@ class LockScreenActivity : ComponentActivity() {
             )
         }
 
-        // Dismiss when user unlocks (ACTION_USER_PRESENT fired by service via the repo signal)
+        // Dismiss when user unlocks (signal from MediaNotificationListenerService).
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 mediaSessionRepository.dismissLockScreen.collect { finish() }
             }
         }
 
-        // Also auto-dismiss when music stops playing.
-        // Guard with wasPlaying so a brief pause arriving before the first playing
-        // update does not instantly close the activity on launch.
+        // Auto-dismiss when music stops.
         var wasPlaying = false
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -147,23 +167,73 @@ class LockScreenActivity : ComponentActivity() {
     }
 }
 
-// ── Full-screen lock UI ────────────────────────────────────────────────────────
+// ── Lock screen content — theme dispatcher ─────────────────────────────────────
 
 @Composable
 private fun LockScreenContent(
+    state: MediaSessionState,
+    theme: LockScreenTheme,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    // Vinyl rotation shared by themes that accept it externally.
+    val rotation = remember { Animatable(0f) }
+    LaunchedEffect(state.isPlaying) {
+        if (state.isPlaying) {
+            while (true) {
+                rotation.animateTo(
+                    targetValue   = rotation.value + 360f,
+                    animationSpec = tween(durationMillis = 3000, easing = LinearEasing)
+                )
+                rotation.snapTo(rotation.value % 360f)
+            }
+        }
+    }
+
+    when (theme) {
+        LockScreenTheme.SLEEVE -> SleeveThemeScreen(
+            coverUrl    = state.coverUrl,
+            trackTitle  = state.trackTitle ?: "",
+            artistName  = state.artistName ?: "",
+            rotation    = rotation.value,
+            isPlaying   = state.isPlaying,
+            onPlayPause = onPlayPause,
+            onNext      = onNext,
+            onPrevious  = onPrevious,
+            onDismiss   = onDismiss
+        )
+        else -> FloatingVinylScreen(
+            state       = state,
+            onPlayPause = onPlayPause,
+            onNext      = onNext,
+            onPrevious  = onPrevious,
+            onDismiss   = onDismiss
+        )
+    }
+}
+
+// ── Floating Vinyl theme (default) ─────────────────────────────────────────────
+
+@Composable
+private fun FloatingVinylScreen(
     state: MediaSessionState,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val screenAlpha = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { screenAlpha.animateTo(1f, tween(400)) }
+
     var swipeDelta by remember { mutableFloatStateOf(0f) }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(BackgroundColor)
-            // Swipe-up gesture: swipe ≥ 120 dp upward to dismiss
+            .background(LockBg)
+            .alpha(screenAlpha.value)
             .pointerInput(Unit) {
                 detectVerticalDragGestures(
                     onVerticalDrag = { _, amount -> swipeDelta += amount },
@@ -180,118 +250,470 @@ private fun LockScreenContent(
                 .fillMaxSize()
                 .systemBarsPadding()
                 .padding(horizontal = 28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceEvenly
         ) {
-
-            Spacer(Modifier.height(20.dp))
-
             LockClock()
 
-            Spacer(Modifier.height(16.dp))
+            LockVinyl(
+                coverUrl  = state.coverUrl,
+                isPlaying = state.isPlaying,
+                modifier  = Modifier
+                    .fillMaxWidth(0.88f)
+                    .aspectRatio(1f)
+            )
 
-            // Vinyl — fills available space between clock and track info
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                TurntableSection(
-                    coverUrl           = state.coverUrl,
-                    vinylDominantColor = Color(state.vinylDominantColor),
-                    vinylVibrantColor  = Color(state.vinylVibrantColor),
-                    isPlaying          = state.isPlaying,
-                    isSessionActive    = true,
-                    turntableSkin      = TurntableSkin.DARK,
-                    modifier           = Modifier
-                        .fillMaxWidth(0.92f)
-                        .aspectRatio(1f)
+            // Track info
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text       = state.trackTitle ?: "",
+                    color      = Color.White,
+                    fontSize   = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines   = 1,
+                    overflow   = TextOverflow.Ellipsis,
+                    textAlign  = TextAlign.Center,
+                    modifier   = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text      = state.artistName ?: "",
+                    color     = Color.White.copy(alpha = 0.6f),
+                    fontSize  = 13.sp,
+                    maxLines  = 1,
+                    overflow  = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier  = Modifier.fillMaxWidth()
                 )
             }
 
-            Spacer(Modifier.height(20.dp))
-
-            // Track info
-            Text(
-                text       = state.trackTitle ?: "",
-                color      = TextPrimary,
-                fontSize   = 22.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines   = 1,
-                overflow   = TextOverflow.Ellipsis,
-                textAlign  = TextAlign.Center,
-                modifier   = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text      = state.artistName ?: "",
-                color     = TextSecondary,
-                fontSize  = 15.sp,
-                maxLines  = 1,
-                overflow  = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier  = Modifier.fillMaxWidth()
+            LockControls(
+                isPlaying   = state.isPlaying,
+                onPlayPause = onPlayPause,
+                onNext      = onNext,
+                onPrevious  = onPrevious
             )
 
-            Spacer(Modifier.height(32.dp))
-
-            // Playback controls
-            Row(
-                verticalAlignment     = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(20.dp)
-            ) {
-                IconButton(onClick = onPrevious) {
-                    Icon(
-                        imageVector        = Icons.Rounded.SkipPrevious,
-                        contentDescription = "Previous",
-                        tint               = TextPrimary,
-                        modifier           = Modifier.size(40.dp)
-                    )
-                }
-
-                // Central play/pause button — slightly larger with a tinted backdrop
-                IconButton(
-                    onClick  = onPlayPause,
-                    modifier = Modifier
-                        .size(72.dp)
-                        .background(ControlOverlay, CircleShape)
-                ) {
-                    Icon(
-                        imageVector        = if (state.isPlaying) Icons.Rounded.Pause
-                                            else Icons.Rounded.PlayArrow,
-                        contentDescription = if (state.isPlaying) "Pause" else "Play",
-                        tint               = TextPrimary,
-                        modifier           = Modifier.size(36.dp)
-                    )
-                }
-
-                IconButton(onClick = onNext) {
-                    Icon(
-                        imageVector        = Icons.Rounded.SkipNext,
-                        contentDescription = "Next",
-                        tint               = TextPrimary,
-                        modifier           = Modifier.size(40.dp)
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(36.dp))
-
-            // Dismiss hint
             Text(
                 text          = "↑   swipe up to dismiss",
-                color         = TextSecondary.copy(alpha = 0.45f),
+                color         = Color.White.copy(alpha = 0.25f),
                 fontSize      = 11.sp,
                 letterSpacing = 1.5.sp,
                 fontWeight    = FontWeight.Light
             )
-
-            Spacer(Modifier.height(20.dp))
         }
     }
 }
 
-// ── Clock widget ───────────────────────────────────────────────────────────────
+// ── Sleeve theme ───────────────────────────────────────────────────────────────
+
+@Composable
+private fun SleeveThemeScreen(
+    coverUrl: String,
+    trackTitle: String,
+    artistName: String,
+    rotation: Float,
+    isPlaying: Boolean,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var swipeDelta by remember { mutableFloatStateOf(0f) }
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(LockBg)
+            .pointerInput(Unit) {
+                detectVerticalDragGestures(
+                    onVerticalDrag = { _, dy -> swipeDelta += dy },
+                    onDragEnd = {
+                        if (swipeDelta < -120.dp.toPx()) onDismiss()
+                        swipeDelta = 0f
+                    },
+                    onDragCancel = { swipeDelta = 0f }
+                )
+            }
+    ) {
+        val coverHeight   = maxHeight * 0.60f
+        val vinylDiameter = maxWidth  * 0.72f
+
+        // ── Cover rectangle — bottom 60%, 85% wide, slightly tilted ──────────
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(0.85f)
+                .height(coverHeight)
+                .rotate(-2f)
+                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+        ) {
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(coverUrl)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = "Album cover",
+                contentScale       = ContentScale.Crop,
+                modifier           = Modifier.fillMaxSize()
+            )
+        }
+
+        // ── Content column over the cover ─────────────────────────────────────
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .systemBarsPadding()
+                .padding(bottom = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // 1. Clock
+            SleeveClockWidget()
+
+            // 2. Vinyl record — only top 55% visible (emerges from the sleeve)
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(vinylDiameter)
+                    .clip(TopFractionShape(0.55f))
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier         = Modifier
+                        .size(vinylDiameter)
+                        .rotate(rotation)
+                ) {
+                    VinylCanvas(
+                        dominantColor       = Color(0xFF1A1A1A),
+                        vibrantColor        = Color(0xFF2A2A2A),
+                        skinBaseColor       = Color(0xFF0D0D0D),
+                        skinLabelColor      = Color(0xFF1C1C1C),
+                        labelRadiusFraction = 0.35f,
+                        modifier            = Modifier.fillMaxSize()
+                    )
+                    AlbumArtLabel(
+                        coverUrl = coverUrl,
+                        modifier = Modifier
+                            .size(vinylDiameter * 0.35f)
+                            .clip(CircleShape)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(5.dp)
+                            .background(VinylBody, CircleShape)
+                    )
+                }
+            }
+
+            // 3. Track info
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text       = trackTitle,
+                    color      = Color.White,
+                    fontSize   = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines   = 1,
+                    overflow   = TextOverflow.Ellipsis,
+                    textAlign  = TextAlign.Center,
+                    modifier   = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 32.dp)
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text      = artistName,
+                    color     = Color.White.copy(alpha = 0.55f),
+                    fontSize  = 13.sp,
+                    maxLines  = 1,
+                    overflow  = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier  = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 32.dp)
+                )
+            }
+
+            // 4. Playback controls
+            SleeveControls(
+                isPlaying   = isPlaying,
+                onPlayPause = onPlayPause,
+                onNext      = onNext,
+                onPrevious  = onPrevious
+            )
+
+            // 5. Dismiss hint
+            Text(
+                text          = "↑   swipe up to dismiss",
+                color         = Color.White.copy(alpha = 0.25f),
+                fontSize      = 11.sp,
+                letterSpacing = 1.5.sp,
+                fontWeight    = FontWeight.Light
+            )
+        }
+    }
+}
+
+// ── Clip shape — keeps only the top `fraction` of any composable ──────────────
+
+private class TopFractionShape(private val fraction: Float) : Shape {
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density
+    ): Outline = Outline.Rectangle(
+        Rect(left = 0f, top = 0f, right = size.width, bottom = size.height * fraction)
+    )
+}
+
+// ── Sleeve clock — time only ───────────────────────────────────────────────────
+
+@Composable
+private fun SleeveClockWidget() {
+    var time by remember { mutableStateOf(LocalTime.now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1_000)
+            time = LocalTime.now()
+        }
+    }
+    Text(
+        text          = time.format(DateTimeFormatter.ofPattern("HH:mm")),
+        color         = Color.White,
+        fontSize      = 48.sp,
+        fontWeight    = FontWeight.Light,
+        letterSpacing = (-2).sp,
+        modifier      = Modifier.padding(top = 16.dp)
+    )
+}
+
+// ── Sleeve controls ────────────────────────────────────────────────────────────
+
+@Composable
+private fun SleeveControls(
+    isPlaying: Boolean,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit
+) {
+    Row(
+        verticalAlignment     = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(36.dp)
+    ) {
+        IconButton(onClick = onPrevious) {
+            Icon(
+                imageVector        = Icons.Rounded.SkipPrevious,
+                contentDescription = "Previous",
+                tint               = Color.White,
+                modifier           = Modifier.size(34.dp)
+            )
+        }
+
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(52.dp)
+                .background(Color.White, CircleShape)
+                .clickable(onClick = onPlayPause)
+        ) {
+            Icon(
+                imageVector        = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                contentDescription = if (isPlaying) "Pause" else "Play",
+                tint               = LockBg,
+                modifier           = Modifier.size(26.dp)
+            )
+        }
+
+        IconButton(onClick = onNext) {
+            Icon(
+                imageVector        = Icons.Rounded.SkipNext,
+                contentDescription = "Next",
+                tint               = Color.White,
+                modifier           = Modifier.size(34.dp)
+            )
+        }
+    }
+}
+
+// ── Vinyl (Floating Vinyl theme) ───────────────────────────────────────────────
+
+private const val LABEL_FRACTION = 0.38f
+
+@Composable
+private fun LockVinyl(
+    coverUrl: String,
+    isPlaying: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val rotation = remember { Animatable(0f) }
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            while (true) {
+                rotation.animateTo(
+                    targetValue   = rotation.value + 360f,
+                    animationSpec = tween(durationMillis = 3000, easing = LinearEasing)
+                )
+                rotation.snapTo(rotation.value % 360f)
+            }
+        }
+        // When paused the LaunchedEffect is restarted with isPlaying=false and
+        // simply does nothing, so the vinyl stops at its current angle.
+    }
+
+    BoxWithConstraints(
+        contentAlignment = Alignment.Center,
+        modifier         = modifier
+    ) {
+        val vinylSize   = maxWidth
+        val labelSizeDp = vinylSize * LABEL_FRACTION
+
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(vinylSize)
+                .rotate(rotation.value)
+        ) {
+            // ── Vinyl canvas ──────────────────────────────────────────────────
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val cx     = size.width / 2f
+                val cy     = size.height / 2f
+                val r      = size.minDimension / 2f
+                val center = Offset(cx, cy)
+
+                val labelRadius = r * LABEL_FRACTION
+                val grooveStart = labelRadius + 2.dp.toPx()
+                val grooveEnd   = r - 3.dp.toPx()
+
+                // 1. Body
+                drawCircle(color = VinylBody, radius = r, center = center)
+
+                // 2. Groove rings
+                val grooveCount = 22
+                repeat(grooveCount) { i ->
+                    val t       = i.toFloat() / (grooveCount - 1)
+                    val grooveR = grooveStart + (grooveEnd - grooveStart) * t
+                    drawCircle(
+                        color  = Color.White.copy(alpha = 0.06f),
+                        radius = grooveR,
+                        center = center,
+                        style  = Stroke(width = 0.5.dp.toPx())
+                    )
+                }
+
+                // 3. Directional highlight
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color.White.copy(alpha = 0.08f), Color.Transparent),
+                        center = Offset(cx - r * 0.35f, cy - r * 0.40f),
+                        radius = r * 0.70f
+                    ),
+                    radius = r,
+                    center = center
+                )
+
+                // 4. Edge darkening
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colorStops = arrayOf(
+                            0.00f to Color.Transparent,
+                            0.95f to Color.Transparent,
+                            1.00f to Color.Black.copy(alpha = 0.55f)
+                        ),
+                        center = center,
+                        radius = r
+                    ),
+                    radius = r,
+                    center = center
+                )
+
+                // 5. Label background
+                drawCircle(color = VinylBody, radius = labelRadius, center = center)
+            }
+
+            // ── Album art ─────────────────────────────────────────────────────
+            if (coverUrl.isNotEmpty()) {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(coverUrl)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = "Album art",
+                    contentScale       = ContentScale.Crop,
+                    modifier           = Modifier
+                        .size(labelSizeDp)
+                        .clip(CircleShape)
+                )
+            }
+
+            // ── Label border ring ─────────────────────────────────────────────
+            Canvas(modifier = Modifier.size(labelSizeDp)) {
+                drawCircle(
+                    color  = Color.White.copy(alpha = 0.15f),
+                    radius = size.minDimension / 2f,
+                    style  = Stroke(width = 1.5.dp.toPx())
+                )
+            }
+
+            // ── Center spindle ────────────────────────────────────────────────
+            Box(
+                modifier = Modifier
+                    .size(4.dp)
+                    .background(VinylBody, CircleShape)
+            )
+        }
+    }
+}
+
+// ── Controls (Floating Vinyl theme) ───────────────────────────────────────────
+
+@Composable
+private fun LockControls(
+    isPlaying: Boolean,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit
+) {
+    Row(
+        verticalAlignment     = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(36.dp)
+    ) {
+        IconButton(onClick = onPrevious) {
+            Icon(
+                imageVector        = Icons.Rounded.SkipPrevious,
+                contentDescription = "Previous",
+                tint               = Color.White,
+                modifier           = Modifier.size(34.dp)
+            )
+        }
+
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(52.dp)
+                .background(Color.White, CircleShape)
+                .clickable(onClick = onPlayPause)
+        ) {
+            Icon(
+                imageVector        = if (isPlaying) Icons.Rounded.Pause
+                                     else Icons.Rounded.PlayArrow,
+                contentDescription = if (isPlaying) "Pause" else "Play",
+                tint               = LockBg,
+                modifier           = Modifier.size(26.dp)
+            )
+        }
+
+        IconButton(onClick = onNext) {
+            Icon(
+                imageVector        = Icons.Rounded.SkipNext,
+                contentDescription = "Next",
+                tint               = Color.White,
+                modifier           = Modifier.size(34.dp)
+            )
+        }
+    }
+}
+
+// ── Clock (Floating Vinyl theme) ───────────────────────────────────────────────
 
 @Composable
 private fun LockClock() {
@@ -308,15 +730,15 @@ private fun LockClock() {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text          = time.format(DateTimeFormatter.ofPattern("HH:mm")),
-            color         = TextPrimary,
-            fontSize      = 68.sp,
-            fontWeight    = FontWeight.Thin,
+            color         = Color.White,
+            fontSize      = 52.sp,
+            fontWeight    = FontWeight.Light,
             letterSpacing = (-2).sp
         )
         Text(
-            text      = date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d")),
-            color     = TextSecondary,
-            fontSize  = 14.sp,
+            text       = date.format(DateTimeFormatter.ofPattern("EEEE, MMMM d")),
+            color      = Color.White.copy(alpha = 0.50f),
+            fontSize   = 13.sp,
             fontWeight = FontWeight.Normal
         )
     }
