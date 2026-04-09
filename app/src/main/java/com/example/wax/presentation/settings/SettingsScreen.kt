@@ -293,7 +293,7 @@ private fun LockScreenThemeCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isAvailable = theme == LockScreenTheme.FLOATING_VINYL
+    val isAvailable = theme == LockScreenTheme.FLOATING_VINYL || theme == LockScreenTheme.SLEEVE
     val previewColor = when (theme) {
         LockScreenTheme.FLOATING_VINYL -> Color(0xFF080810)
         LockScreenTheme.SLEEVE         -> Color(0xFF1C1410)
