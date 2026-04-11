@@ -69,7 +69,7 @@ class UserPreferencesRepository @Inject constructor(
     // ── Lock screen theme ─────────────────────────────────────────────────────
 
     val lockScreenTheme: Flow<LockScreenTheme> = context.userPrefsDataStore.data
-        .map { prefs -> LockScreenTheme.fromKey(prefs[KEY_LOCK_SCREEN_THEME] ?: LockScreenTheme.FLOATING_VINYL.key) }
+        .map { prefs -> LockScreenTheme.fromKey(prefs[KEY_LOCK_SCREEN_THEME] ?: LockScreenTheme.CLASSIC.key) }
 
     suspend fun readLockScreenTheme(): LockScreenTheme = lockScreenTheme.first()
 

@@ -11,6 +11,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -24,11 +29,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.CircleShape
@@ -94,6 +100,7 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import javax.inject.Inject
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.sin
 
 private val LockBg    = Color(0xFF080810)
@@ -142,7 +149,7 @@ class LockScreenActivity : ComponentActivity() {
         setContent {
             val state by mediaSessionRepository.state.collectAsStateWithLifecycle()
             val theme by userPreferencesRepository.lockScreenTheme
-                .collectAsStateWithLifecycle(initialValue = LockScreenTheme.FLOATING_VINYL)
+                .collectAsStateWithLifecycle(initialValue = LockScreenTheme.CLASSIC)
             LockScreenContent(
                 state       = state,
                 theme       = theme,
@@ -214,29 +221,6 @@ private fun LockScreenContent(
             coverUrl    = state.coverUrl,
             trackTitle  = state.trackTitle ?: "",
             artistName  = state.artistName ?: "",
-            rotation    = rotation.value,
-            isPlaying   = state.isPlaying,
-            onPlayPause = onPlayPause,
-            onNext      = onNext,
-            onPrevious  = onPrevious,
-            onDismiss   = onDismiss
-        )
-        LockScreenTheme.POLAROID -> PolaroidThemeScreen(
-            coverUrl    = state.coverUrl,
-            trackTitle  = state.trackTitle ?: "",
-            artistName  = state.artistName ?: "",
-            rotation    = rotation.value,
-            isPlaying   = state.isPlaying,
-            onPlayPause = onPlayPause,
-            onNext      = onNext,
-            onPrevious  = onPrevious,
-            onDismiss   = onDismiss
-        )
-        LockScreenTheme.NEON -> NeonThemeScreen(
-            coverUrl    = state.coverUrl,
-            trackTitle  = state.trackTitle ?: "",
-            artistName  = state.artistName ?: "",
-            rotation    = rotation.value,
             isPlaying   = state.isPlaying,
             onPlayPause = onPlayPause,
             onNext      = onNext,
@@ -345,6 +329,8 @@ private fun FloatingVinylScreen(
 }
 
 // ── Sleeve theme ───────────────────────────────────────────────────────────────
+// Vinyl slides out of the album sleeve: cover art fills the bottom 65%,
+// vinyl center sits at the sleeve's top edge so half is visible, half hidden.
 
 @Composable
 private fun SleeveThemeScreen(
@@ -375,17 +361,48 @@ private fun SleeveThemeScreen(
                 )
             }
     ) {
-        val coverHeight   = maxHeight * 0.60f
-        val vinylDiameter = maxWidth  * 0.72f
+        val vinylDiameter = maxWidth * 0.72f
+        val sleeveTopY    = maxHeight * 0.35f          // sleeve starts at 35% from top
+        val vinylOffsetX  = (maxWidth - vinylDiameter) / 2f
+        val vinylOffsetY  = sleeveTopY - vinylDiameter / 2f  // vinyl center = sleeve top
 
-        // ── Cover rectangle — bottom 60%, 85% wide, slightly tilted ──────────
+        // 1. Vinyl — drawn first so the sleeve (drawn next) covers its bottom half
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .offset(x = vinylOffsetX, y = vinylOffsetY)
+                .size(vinylDiameter)
+                .rotate(rotation)
+        ) {
+            VinylCanvas(
+                dominantColor       = Color(0xFF1A1A1A),
+                vibrantColor        = Color(0xFF2A2A2A),
+                skinBaseColor       = Color(0xFF0D0D0D),
+                skinLabelColor      = Color(0xFF1C1C1C),
+                labelRadiusFraction = 0.35f,
+                modifier            = Modifier.fillMaxSize()
+            )
+            AlbumArtLabel(
+                coverUrl = coverUrl,
+                modifier = Modifier
+                    .size(vinylDiameter * 0.35f)
+                    .clip(CircleShape)
+            )
+            Box(
+                modifier = Modifier
+                    .size(5.dp)
+                    .background(VinylBody, CircleShape)
+            )
+        }
+
+        // 2. Sleeve — bottom 65%, full width, rounded top corners 20dp.
+        //    Natural z-order places it over the vinyl's bottom half.
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .fillMaxWidth(0.85f)
-                .height(coverHeight)
-                .rotate(-2f)
-                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                .fillMaxWidth()
+                .fillMaxHeight(0.65f)
+                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
         ) {
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
@@ -396,57 +413,29 @@ private fun SleeveThemeScreen(
                 contentScale       = ContentScale.Crop,
                 modifier           = Modifier.fillMaxSize()
             )
-        }
-
-        // ── Content column over the cover ─────────────────────────────────────
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .systemBarsPadding()
-                .padding(bottom = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            // 1. Clock
-            SleeveClockWidget()
-
-            // 2. Vinyl record — only top 55% visible (emerges from the sleeve)
+            // Dark gradient so bottom text is readable
             Box(
-                contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .size(vinylDiameter)
-                    .clip(TopFractionShape(0.55f))
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colorStops = arrayOf(
+                                0.0f to Color.Transparent,
+                                0.5f to Color.Transparent,
+                                1.0f to Color.Black.copy(alpha = 0.80f)
+                            )
+                        )
+                    )
+            )
+            // Track info and controls pinned to the bottom of the sleeve
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(bottom = 20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier         = Modifier
-                        .size(vinylDiameter)
-                        .rotate(rotation)
-                ) {
-                    VinylCanvas(
-                        dominantColor       = Color(0xFF1A1A1A),
-                        vibrantColor        = Color(0xFF2A2A2A),
-                        skinBaseColor       = Color(0xFF0D0D0D),
-                        skinLabelColor      = Color(0xFF1C1C1C),
-                        labelRadiusFraction = 0.35f,
-                        modifier            = Modifier.fillMaxSize()
-                    )
-                    AlbumArtLabel(
-                        coverUrl = coverUrl,
-                        modifier = Modifier
-                            .size(vinylDiameter * 0.35f)
-                            .clip(CircleShape)
-                    )
-                    Box(
-                        modifier = Modifier
-                            .size(5.dp)
-                            .background(VinylBody, CircleShape)
-                    )
-                }
-            }
-
-            // 3. Track info
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     text       = trackTitle,
                     color      = Color.White,
@@ -459,10 +448,9 @@ private fun SleeveThemeScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 32.dp)
                 )
-                Spacer(Modifier.height(6.dp))
                 Text(
                     text      = artistName,
-                    color     = Color.White.copy(alpha = 0.55f),
+                    color     = Color.White.copy(alpha = 0.70f),
                     fontSize  = 13.sp,
                     maxLines  = 1,
                     overflow  = TextOverflow.Ellipsis,
@@ -471,38 +459,32 @@ private fun SleeveThemeScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 32.dp)
                 )
+                Spacer(Modifier.height(4.dp))
+                SleeveControls(
+                    isPlaying   = isPlaying,
+                    onPlayPause = onPlayPause,
+                    onNext      = onNext,
+                    onPrevious  = onPrevious
+                )
+                Text(
+                    text          = "↑   swipe up to dismiss",
+                    color         = Color.White.copy(alpha = 0.35f),
+                    fontSize      = 11.sp,
+                    letterSpacing = 1.5.sp,
+                    fontWeight    = FontWeight.Light
+                )
             }
+        }
 
-            // 4. Playback controls
-            SleeveControls(
-                isPlaying   = isPlaying,
-                onPlayPause = onPlayPause,
-                onNext      = onNext,
-                onPrevious  = onPrevious
-            )
-
-            // 5. Dismiss hint
-            Text(
-                text          = "↑   swipe up to dismiss",
-                color         = Color.White.copy(alpha = 0.25f),
-                fontSize      = 11.sp,
-                letterSpacing = 1.5.sp,
-                fontWeight    = FontWeight.Light
-            )
+        // 3. Clock — drawn last so it sits on top of everything
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .systemBarsPadding()
+        ) {
+            SleeveClockWidget()
         }
     }
-}
-
-// ── Clip shape — keeps only the top `fraction` of any composable ──────────────
-
-private class TopFractionShape(private val fraction: Float) : Shape {
-    override fun createOutline(
-        size: Size,
-        layoutDirection: LayoutDirection,
-        density: Density
-    ): Outline = Outline.Rectangle(
-        Rect(left = 0f, top = 0f, right = size.width, bottom = size.height * fraction)
-    )
 }
 
 // ── Sleeve clock — time only ───────────────────────────────────────────────────
@@ -786,14 +768,12 @@ private fun LockClock() {
 // ── Waveform theme ─────────────────────────────────────────────────────────────
 
 private const val WAVE_BAR_COUNT = 40
-private val TWO_PI = (2.0 * PI).toFloat()
 
 @Composable
 private fun WaveformThemeScreen(
     coverUrl: String,
     trackTitle: String,
     artistName: String,
-    @Suppress("UNUSED_PARAMETER") rotation: Float,
     isPlaying: Boolean,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
@@ -801,28 +781,24 @@ private fun WaveformThemeScreen(
     onDismiss: () -> Unit
 ) {
     var swipeDelta by remember { mutableFloatStateOf(0f) }
-    val phase     = remember { Animatable(0f) }
-    val amplitude = remember { Animatable(0f) }
 
-    // Smooth collapse / expand when play state changes
-    LaunchedEffect(isPlaying) {
-        amplitude.animateTo(
-            targetValue   = if (isPlaying) 1f else 0f,
-            animationSpec = tween(durationMillis = 500)
-        )
-    }
-    // Continuously advance the wave phase while playing
-    LaunchedEffect(isPlaying) {
-        if (isPlaying) {
-            while (true) {
-                phase.animateTo(
-                    targetValue   = phase.value + TWO_PI,
-                    animationSpec = tween(durationMillis = 1400, easing = LinearEasing)
-                )
-                phase.snapTo(phase.value % TWO_PI)
-            }
-        }
-    }
+    // Single infiniteTransition drives a continuous sine-wave clock — no snapTo resets
+    val infiniteTransition = rememberInfiniteTransition(label = "waveform")
+    val time by infiniteTransition.animateFloat(
+        initialValue  = 0f,
+        targetValue   = 2f * PI.toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation  = tween(2000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "time"
+    )
+    // Smooth 0↔1 transition when play state changes
+    val isPlayingFactor by animateFloatAsState(
+        targetValue   = if (isPlaying) 1f else 0f,
+        animationSpec = tween(durationMillis = 600),
+        label         = "isPlayingFactor"
+    )
 
     BoxWithConstraints(
         modifier = Modifier
@@ -856,10 +832,10 @@ private fun WaveformThemeScreen(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 // Top waveform — bars hang downward (mirrored)
                 WaveformBars(
-                    phase     = phase.value,
-                    amplitude = amplitude.value,
-                    flipped   = true,
-                    modifier  = Modifier
+                    time            = time,
+                    isPlayingFactor = isPlayingFactor,
+                    flipped         = true,
+                    modifier        = Modifier
                         .fillMaxWidth()
                         .height(60.dp)
                         .padding(horizontal = 20.dp)
@@ -890,10 +866,10 @@ private fun WaveformThemeScreen(
 
                 // Bottom waveform — bars grow upward (normal)
                 WaveformBars(
-                    phase     = phase.value,
-                    amplitude = amplitude.value,
-                    flipped   = false,
-                    modifier  = Modifier
+                    time            = time,
+                    isPlayingFactor = isPlayingFactor,
+                    flipped         = false,
+                    modifier        = Modifier
                         .fillMaxWidth()
                         .height(60.dp)
                         .padding(horizontal = 20.dp)
@@ -952,8 +928,8 @@ private fun WaveformThemeScreen(
 
 @Composable
 private fun WaveformBars(
-    phase: Float,
-    amplitude: Float,
+    time: Float,
+    isPlayingFactor: Float,
     flipped: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -964,20 +940,12 @@ private fun WaveformBars(
         val totalW     = WAVE_BAR_COUNT * stepPx - gapPx
         val startX     = (size.width - totalW) / 2f
         val maxH       = size.height
-        val minH       = 2.dp.toPx()
 
         repeat(WAVE_BAR_COUNT) { i ->
-            val t = i.toFloat() / WAVE_BAR_COUNT
-            // Two overlapping sine waves at different frequencies for organic feel
-            val wave1 = sin(phase + t * TWO_PI * 2.0).toFloat()
-            val wave2 = sin(phase * 1.5f + t * TWO_PI * 3.5f + 1.0).toFloat()
-            val wave  = wave1 * 0.65f + wave2 * 0.35f           // range ≈ [-1, 1]
-            val frac  = wave * 0.5f + 0.5f                       // range [0, 1]
-            val barH  = (minH + (maxH - minH) * frac) * amplitude + minH * (1f - amplitude)
-
+            val barH   = abs(sin(time + i.toFloat() * 0.3f)) * maxH * isPlayingFactor
             val x      = startX + i * stepPx + barWidthPx / 2f
-            val startY = if (flipped) 0f              else size.height - barH
-            val endY   = if (flipped) barH             else size.height
+            val startY = if (flipped) 0f     else size.height - barH
+            val endY   = if (flipped) barH   else size.height
 
             drawLine(
                 color       = Color.White.copy(alpha = 0.6f),
@@ -1038,461 +1006,3 @@ private fun WaveformControls(
     }
 }
 
-// ── Polaroid theme ─────────────────────────────────────────────────────────────
-
-@Composable
-private fun PolaroidThemeScreen(
-    coverUrl: String,
-    trackTitle: String,
-    artistName: String,
-    @Suppress("UNUSED_PARAMETER") rotation: Float,
-    isPlaying: Boolean,
-    onPlayPause: () -> Unit,
-    onNext: () -> Unit,
-    onPrevious: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    var swipeDelta by remember { mutableFloatStateOf(0f) }
-
-    // Card tilt seeded by track title: deterministic value in [-3, +3] degrees
-    val cardTilt = remember(trackTitle) {
-        val h = trackTitle.hashCode()
-        ((h % 7 + 7) % 7).toFloat() - 3f
-    }
-
-    // Spinning mini-disc rotation
-    val discRotation = remember { Animatable(0f) }
-    LaunchedEffect(isPlaying) {
-        if (isPlaying) {
-            while (true) {
-                discRotation.animateTo(
-                    targetValue   = discRotation.value + 360f,
-                    animationSpec = tween(durationMillis = 2000, easing = LinearEasing)
-                )
-                discRotation.snapTo(discRotation.value % 360f)
-            }
-        }
-    }
-
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(LockBg)
-            .pointerInput(Unit) {
-                detectVerticalDragGestures(
-                    onVerticalDrag = { _, dy -> swipeDelta += dy },
-                    onDragEnd = {
-                        if (swipeDelta < -120.dp.toPx()) onDismiss()
-                        swipeDelta = 0f
-                    },
-                    onDragCancel = { swipeDelta = 0f }
-                )
-            }
-    ) {
-        val cardWidth = maxWidth * 0.72f
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .systemBarsPadding()
-                .padding(bottom = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            // 1. Clock
-            SleeveClockWidget()
-
-            // 2. Polaroid card
-            Box(
-                modifier = Modifier
-                    .rotate(cardTilt)
-                    .shadow(elevation = 16.dp)
-                    .width(cardWidth)
-                    .background(Color.White)
-            ) {
-                Column {
-                    // Album art — square, fills top ~80% of card
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(coverUrl)
-                            .crossfade(true)
-                            .build(),
-                        contentDescription = "Album art",
-                        contentScale       = ContentScale.Crop,
-                        modifier           = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1f)
-                    )
-
-                    // White label area — bottom ~20%
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color.White)
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Row(
-                            verticalAlignment     = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text       = trackTitle,
-                                color      = Color(0xFF1A1A1A),
-                                fontSize   = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines   = 1,
-                                overflow   = TextOverflow.Ellipsis,
-                                modifier   = Modifier.weight(1f)
-                            )
-                            if (isPlaying) {
-                                MiniSpinningDisc(
-                                    rotation = discRotation.value,
-                                    modifier = Modifier.size(40.dp)
-                                )
-                            }
-                        }
-                        Text(
-                            text     = artistName,
-                            color    = Color(0xFF888888),
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
-
-            // 3. Controls
-            LockControls(
-                isPlaying   = isPlaying,
-                onPlayPause = onPlayPause,
-                onNext      = onNext,
-                onPrevious  = onPrevious
-            )
-
-            // 4. Dismiss hint
-            Text(
-                text          = "↑   swipe up to dismiss",
-                color         = Color.White.copy(alpha = 0.25f),
-                fontSize      = 11.sp,
-                letterSpacing = 1.5.sp,
-                fontWeight    = FontWeight.Light
-            )
-        }
-    }
-}
-
-// ── Mini spinning disc (Polaroid vinyl indicator) ──────────────────────────────
-
-@Composable
-private fun MiniSpinningDisc(
-    rotation: Float,
-    modifier: Modifier = Modifier
-) {
-    Canvas(modifier = modifier.rotate(rotation)) {
-        val r      = size.minDimension / 2f
-        val center = Offset(size.width / 2f, size.height / 2f)
-
-        // Body
-        drawCircle(color = Color(0xFF1A1A1A), radius = r, center = center)
-
-        // Groove rings
-        val grooveCount = 6
-        repeat(grooveCount) { i ->
-            val t       = (i + 1).toFloat() / (grooveCount + 1)
-            val grooveR = r * 0.38f + r * 0.55f * t
-            drawCircle(
-                color  = Color.White.copy(alpha = 0.14f),
-                radius = grooveR,
-                center = center,
-                style  = Stroke(width = 0.8.dp.toPx())
-            )
-        }
-
-        // Label circle
-        drawCircle(color = Color(0xFF333333), radius = r * 0.32f, center = center)
-
-        // Center spindle hole
-        drawCircle(color = Color(0xFF1A1A1A), radius = 2.dp.toPx(), center = center)
-    }
-}
-
-// ── Neon theme ─────────────────────────────────────────────────────────────────
-
-private val NeonBlack = Color(0xFF000000)
-private val NeonCyan  = Color(0xFF00FFE5)
-
-@Composable
-private fun NeonThemeScreen(
-    coverUrl: String,
-    trackTitle: String,
-    artistName: String,
-    rotation: Float,
-    isPlaying: Boolean,
-    onPlayPause: () -> Unit,
-    onNext: () -> Unit,
-    onPrevious: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    var swipeDelta by remember { mutableFloatStateOf(0f) }
-    val neonColor = NeonCyan
-
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(NeonBlack)
-            .pointerInput(Unit) {
-                detectVerticalDragGestures(
-                    onVerticalDrag = { _, dy -> swipeDelta += dy },
-                    onDragEnd = {
-                        if (swipeDelta < -120.dp.toPx()) onDismiss()
-                        swipeDelta = 0f
-                    },
-                    onDragCancel = { swipeDelta = 0f }
-                )
-            }
-    ) {
-        val artSize   = maxWidth * 0.55f
-        val vinylSize = maxWidth * 0.30f
-
-        // Content column
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .systemBarsPadding()
-                .padding(bottom = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            // 1. Clock in neon cyan
-            NeonClock(neonColor = neonColor)
-
-            // 2. Album art with layered neon glow
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier         = Modifier.size(artSize + 40.dp)
-            ) {
-                // Glow rings drawn behind the art
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val c    = Offset(size.width / 2f, size.height / 2f)
-                    val artR = artSize.toPx() / 2f
-                    // Outermost glow (faintest)
-                    drawCircle(
-                        color  = neonColor.copy(alpha = 0.03f),
-                        radius = artR + 16.dp.toPx(),
-                        center = c,
-                        style  = Stroke(width = 14.dp.toPx())
-                    )
-                    // Middle glow
-                    drawCircle(
-                        color  = neonColor.copy(alpha = 0.08f),
-                        radius = artR + 7.dp.toPx(),
-                        center = c,
-                        style  = Stroke(width = 8.dp.toPx())
-                    )
-                    // Inner glow (brightest)
-                    drawCircle(
-                        color  = neonColor.copy(alpha = 0.15f),
-                        radius = artR + 2.dp.toPx(),
-                        center = c,
-                        style  = Stroke(width = 4.dp.toPx())
-                    )
-                }
-                // Album art with solid 2dp neon border
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(coverUrl)
-                        .crossfade(true)
-                        .build(),
-                    contentDescription = "Album art",
-                    contentScale       = ContentScale.Crop,
-                    modifier           = Modifier
-                        .size(artSize)
-                        .border(2.dp, neonColor, CircleShape)
-                        .clip(CircleShape)
-                )
-            }
-
-            // 3. Small spinning vinyl with neon grooves
-            NeonVinyl(
-                rotation  = rotation,
-                neonColor = neonColor,
-                modifier  = Modifier.size(vinylSize)
-            )
-
-            // 4. Track info
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text          = trackTitle,
-                    color         = neonColor,
-                    fontSize      = 18.sp,
-                    fontWeight    = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    maxLines      = 1,
-                    overflow      = TextOverflow.Ellipsis,
-                    textAlign     = TextAlign.Center,
-                    modifier      = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 32.dp)
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text      = artistName,
-                    color     = Color.White.copy(alpha = 0.5f),
-                    fontSize  = 13.sp,
-                    maxLines  = 1,
-                    overflow  = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    modifier  = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 32.dp)
-                )
-            }
-
-            // 5. Controls with neon accent
-            NeonControls(
-                isPlaying   = isPlaying,
-                onPlayPause = onPlayPause,
-                onNext      = onNext,
-                onPrevious  = onPrevious,
-                neonColor   = neonColor
-            )
-
-            // 6. Dismiss hint
-            Text(
-                text          = "↑   swipe up to dismiss",
-                color         = neonColor.copy(alpha = 0.5f),
-                fontSize      = 10.sp,
-                letterSpacing = 1.5.sp,
-                fontWeight    = FontWeight.Light
-            )
-        }
-
-        // CRT scanline overlay — subtle horizontal lines at 4px pitch
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            var y = 0f
-            while (y < size.height) {
-                drawLine(
-                    color       = Color.Black.copy(alpha = 0.04f),
-                    start       = Offset(0f, y),
-                    end         = Offset(size.width, y),
-                    strokeWidth = 1f
-                )
-                y += 4f
-            }
-        }
-    }
-}
-
-// ── Neon clock ─────────────────────────────────────────────────────────────────
-
-@Composable
-private fun NeonClock(neonColor: Color) {
-    var time by remember { mutableStateOf(LocalTime.now()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(1_000)
-            time = LocalTime.now()
-        }
-    }
-    Text(
-        text          = time.format(DateTimeFormatter.ofPattern("HH:mm")),
-        color         = neonColor,
-        fontSize      = 48.sp,
-        fontWeight    = FontWeight.Light,
-        letterSpacing = (-2).sp,
-        modifier      = Modifier.padding(top = 16.dp)
-    )
-}
-
-// ── Neon spinning vinyl ────────────────────────────────────────────────────────
-
-@Composable
-private fun NeonVinyl(
-    rotation: Float,
-    neonColor: Color,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier         = modifier.rotate(rotation)
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val r      = size.minDimension / 2f
-            val center = Offset(size.width / 2f, size.height / 2f)
-
-            // Body
-            drawCircle(color = Color(0xFF0A0A0A), radius = r, center = center)
-
-            // Neon groove rings
-            val grooveCount = 10
-            repeat(grooveCount) { i ->
-                val t       = (i + 1).toFloat() / (grooveCount + 1)
-                val grooveR = r * 0.42f + r * 0.50f * t
-                drawCircle(
-                    color  = neonColor.copy(alpha = 0.20f),
-                    radius = grooveR,
-                    center = center,
-                    style  = Stroke(width = 0.8.dp.toPx())
-                )
-            }
-
-            // Label circle
-            drawCircle(color = Color(0xFF0D0D0D), radius = r * 0.32f, center = center)
-
-            // Center hole
-            drawCircle(color = NeonBlack, radius = 2.5.dp.toPx(), center = center)
-        }
-    }
-}
-
-// ── Neon controls ──────────────────────────────────────────────────────────────
-
-@Composable
-private fun NeonControls(
-    isPlaying: Boolean,
-    onPlayPause: () -> Unit,
-    onNext: () -> Unit,
-    onPrevious: () -> Unit,
-    neonColor: Color
-) {
-    Row(
-        verticalAlignment     = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(36.dp)
-    ) {
-        IconButton(onClick = onPrevious) {
-            Icon(
-                imageVector        = Icons.Rounded.SkipPrevious,
-                contentDescription = "Previous",
-                tint               = Color.White,
-                modifier           = Modifier.size(34.dp)
-            )
-        }
-
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(52.dp)
-                .background(NeonBlack, CircleShape)
-                .border(2.dp, neonColor, CircleShape)
-                .clickable(onClick = onPlayPause)
-        ) {
-            Icon(
-                imageVector        = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                contentDescription = if (isPlaying) "Pause" else "Play",
-                tint               = neonColor,
-                modifier           = Modifier.size(26.dp)
-            )
-        }
-
-        IconButton(onClick = onNext) {
-            Icon(
-                imageVector        = Icons.Rounded.SkipNext,
-                contentDescription = "Next",
-                tint               = Color.White,
-                modifier           = Modifier.size(34.dp)
-            )
-        }
-    }
-}

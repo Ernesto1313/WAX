@@ -231,8 +231,21 @@ fun SettingsScreen(
             }
         }
 
-        SettingsRow {
-            Column(modifier = Modifier.weight(1f)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    context.startActivity(
+                        Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:${context.packageName}")
+                        )
+                    )
+                }
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
                 Text("Display over lock screen", color = Color.White, fontSize = 15.sp)
                 Text(
                     "Required to show the turntable on Samsung One UI and MIUI",
@@ -248,39 +261,6 @@ fun SettingsScreen(
                     )
                 } else {
                     Text("Not granted", color = DangerRed, fontSize = 12.sp)
-                }
-            }
-            Spacer(Modifier.width(12.dp))
-            if (uiState.hasOverlayPermission) {
-                Switch(
-                    checked         = true,
-                    onCheckedChange = {
-                        context.startActivity(
-                            Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:${context.packageName}")
-                            )
-                        )
-                    },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor   = Color.White,
-                        checkedTrackColor   = SpotifyGreen,
-                        uncheckedThumbColor = Color.White,
-                        uncheckedTrackColor = SurfaceHigh
-                    )
-                )
-            } else {
-                TextButton(
-                    onClick = {
-                        context.startActivity(
-                            Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:${context.packageName}")
-                            )
-                        )
-                    }
-                ) {
-                    Text("Grant", color = SpotifyGreen, fontSize = 13.sp)
                 }
             }
         }
@@ -318,14 +298,10 @@ private fun LockScreenThemeCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isAvailable = theme == LockScreenTheme.FLOATING_VINYL || theme == LockScreenTheme.SLEEVE ||
-        theme == LockScreenTheme.WAVEFORM || theme == LockScreenTheme.POLAROID || theme == LockScreenTheme.NEON
     val previewColor = when (theme) {
-        LockScreenTheme.FLOATING_VINYL -> Color(0xFF080810)
-        LockScreenTheme.SLEEVE         -> Color(0xFF1C1410)
-        LockScreenTheme.WAVEFORM       -> Color(0xFF080820)
-        LockScreenTheme.POLAROID       -> Color(0xFF1E1E1A)
-        LockScreenTheme.NEON           -> Color(0xFF100816)
+        LockScreenTheme.CLASSIC  -> Color(0xFF080810)
+        LockScreenTheme.SLEEVE   -> Color(0xFF1C1410)
+        LockScreenTheme.WAVEFORM -> Color(0xFF080820)
     }
 
     Column(
@@ -338,9 +314,8 @@ private fun LockScreenThemeCard(
                 color = if (selected) SpotifyGreen else Color.White.copy(alpha = 0.10f),
                 shape = RoundedCornerShape(12.dp)
             )
-            .clickable(enabled = isAvailable, onClick = onClick)
-            .padding(10.dp)
-            .alpha(if (isAvailable) 1f else 0.45f),
+            .clickable(onClick = onClick)
+            .padding(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -349,22 +324,11 @@ private fun LockScreenThemeCard(
                 .fillMaxWidth()
                 .height(58.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(previewColor),
-            contentAlignment = Alignment.Center
-        ) {
-            if (!isAvailable) {
-                Text(
-                    text       = "Soon",
-                    color      = Color.White.copy(alpha = 0.45f),
-                    fontSize   = 10.sp,
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = 0.5.sp
-                )
-            }
-        }
+                .background(previewColor)
+        )
         Text(
             text       = theme.displayName,
-            color      = if (selected) SpotifyGreen else if (isAvailable) Color.White else TextSecondary,
+            color      = if (selected) SpotifyGreen else Color.White,
             fontSize   = 11.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
         )

@@ -30,7 +30,7 @@ data class SettingsUiState(
     val weeklyNotifEnabled: Boolean = true,
     val hasNotificationAccess: Boolean = false,
     val hasOverlayPermission: Boolean = false,
-    val lockScreenTheme: LockScreenTheme = LockScreenTheme.FLOATING_VINYL
+    val lockScreenTheme: LockScreenTheme = LockScreenTheme.CLASSIC
 )
 
 sealed class SettingsEvent {
