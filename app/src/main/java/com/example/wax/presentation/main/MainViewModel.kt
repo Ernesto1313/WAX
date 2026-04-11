@@ -1,15 +1,9 @@
 package com.example.wax.presentation.main
 
 import android.content.Context
-import android.graphics.drawable.BitmapDrawable
 import android.util.Log
-import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.palette.graphics.Palette
-import coil.ImageLoader
-import coil.request.ImageRequest
-import coil.request.SuccessResult
 import androidx.core.app.NotificationManagerCompat
 import com.example.wax.core.auth.SpotifyAuthManager
 import com.example.wax.core.auth.TokenManager
@@ -22,7 +16,6 @@ import com.example.wax.domain.model.Track
 import com.example.wax.domain.usecase.GetWeeklyAlbumUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -33,7 +26,6 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 data class MainUiState(
@@ -45,9 +37,6 @@ data class MainUiState(
     val isLoading: Boolean = false,
     val isPlaying: Boolean = true,
     val error: String? = null,
-    // Extracted from album art via Palette — fallback to dark grey until loaded
-    val vinylDominantColor: Color = Color(0xFF1A1A1A),
-    val vinylVibrantColor: Color = Color(0xFF2A2A2A),
     val album: Album? = null,
     val currentTrackId: String? = null,
     val isSessionActive: Boolean = false,
@@ -199,7 +188,6 @@ class MainViewModel @Inject constructor(
                 albumHistoryRepository.saveAlbum(albumWithTracks)
                 if (albumWithTracks.coverUrl.isNotEmpty()) {
                     mediaSessionRepository.setAlbumCover(albumWithTracks.coverUrl)
-                    extractVinylColors(albumWithTracks.coverUrl)
                 }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "fetchNowPlayingAlbum failed for '$albumName'", e)
@@ -354,7 +342,6 @@ class MainViewModel @Inject constructor(
             albumHistoryRepository.saveAlbum(albumWithTracks)
             if (albumWithTracks.coverUrl.isNotEmpty()) {
                 mediaSessionRepository.setAlbumCover(albumWithTracks.coverUrl)
-                extractVinylColors(albumWithTracks.coverUrl)
             }
         } catch (e: Exception) {
             Log.e("MainViewModel", "loadWeeklyAlbum failed", e)
@@ -363,39 +350,4 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    // ── Palette extraction ────────────────────────────────────────────────────
-
-    // Loads a downscaled bitmap via Coil, extracts dominant + vibrant swatches,
-    // and updates the vinyl gradient colors in state.
-    private suspend fun extractVinylColors(imageUrl: String) {
-        try {
-            val request = ImageRequest.Builder(context)
-                .data(imageUrl)
-                .allowHardware(false) // Palette needs a software-backed bitmap
-                .size(200, 200)       // Downscale — we only need colors, not full res
-                .build()
-
-            val result = ImageLoader(context).execute(request) as? SuccessResult ?: return
-            val bitmap = (result.drawable as? BitmapDrawable)?.bitmap ?: return
-
-            // generate() is blocking — run on Default dispatcher
-            val palette = withContext(Dispatchers.Default) {
-                Palette.from(bitmap).generate()
-            }
-
-            val dominant = palette.getDominantColor(0xFF1A1A1A.toInt())
-            val vibrant = palette.getVibrantColor(dominant)
-
-            _uiState.update {
-                it.copy(
-                    vinylDominantColor = Color(dominant),
-                    vinylVibrantColor = Color(vibrant)
-                )
-            }
-            // Push colors to the media repo so LockScreenActivity can use them
-            mediaSessionRepository.setVinylColors(dominant, vibrant)
-        } catch (e: Exception) {
-            // Keep dark grey fallback — no state update needed
-        }
-    }
 }

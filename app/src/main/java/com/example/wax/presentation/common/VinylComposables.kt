@@ -18,12 +18,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -46,8 +44,6 @@ internal fun TurntableSkin.labelColor() = Color(0xFF1C1C1C)
 @Composable
 internal fun TurntableSection(
     coverUrl: String,
-    vinylDominantColor: Color,
-    vinylVibrantColor: Color,
     isPlaying: Boolean,
     isSessionActive: Boolean,
     turntableSkin: TurntableSkin,
@@ -86,8 +82,6 @@ internal fun TurntableSection(
                     .rotate(rotation.value)
             ) {
                 VinylCanvas(
-                    dominantColor        = vinylDominantColor,
-                    vibrantColor         = vinylVibrantColor,
                     skinBaseColor        = turntableSkin.baseColor(),
                     skinLabelColor       = turntableSkin.labelColor(),
                     labelRadiusFraction  = labelRadiusFraction,
@@ -114,8 +108,6 @@ internal fun TurntableSection(
 
 @Composable
 internal fun VinylCanvas(
-    dominantColor: Color,
-    vibrantColor: Color,
     skinBaseColor: Color,
     skinLabelColor: Color,
     labelRadiusFraction: Float = 0.28f,
@@ -131,13 +123,9 @@ internal fun VinylCanvas(
         val grooveEnd   = r - 3.dp.toPx()
 
         // ── 1. BASE BODY ──────────────────────────────────────────────────────
-        // Radial gradient from slightly-lit center to pure black edge,
-        // both tinted 15%/5% toward the album's dominant color.
-        val vinylCenter = lerp(Color(0xFF1A1A1A), dominantColor, 0.15f)
-        val vinylEdge   = lerp(Color(0xFF000000), dominantColor, 0.05f)
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(vinylCenter, vinylEdge),
+                colors = listOf(Color(0xFF1A1A1A), Color(0xFF000000)),
                 center = center,
                 radius = r
             ),
@@ -178,26 +166,7 @@ internal fun VinylCanvas(
             )
         }
 
-        // ── 4. IRIDESCENT SHIMMER ─────────────────────────────────────────────
-        // Three arc sweeps at 60 / 70 / 80 % radius, staggered 40° apart,
-        // using the album's vibrant color at very low alpha to mimic the
-        // rainbow iridescence real vinyl shows under direct light.
-        val shimmerRadii  = listOf(r * 0.60f, r * 0.70f, r * 0.80f)
-        val shimmerAngles = listOf(-30f, 10f, 50f)
-        val shimmerAlphas = listOf(0.07f, 0.05f, 0.04f)
-        shimmerRadii.forEachIndexed { i, shimmerR ->
-            drawArc(
-                color      = vibrantColor.copy(alpha = shimmerAlphas[i]),
-                startAngle = shimmerAngles[i],
-                sweepAngle = 60f,
-                useCenter  = false,
-                topLeft    = Offset(cx - shimmerR, cy - shimmerR),
-                size       = Size(shimmerR * 2f, shimmerR * 2f),
-                style      = Stroke(width = 3.dp.toPx())
-            )
-        }
-
-        // ── 5. DIRECTIONAL HIGHLIGHT ──────────────────────────────────────────
+        // ── 4. DIRECTIONAL HIGHLIGHT ──────────────────────────────────────────
         // Soft white radial gradient anchored at upper-left, simulating a
         // single overhead light source reflecting off the disc surface.
         drawCircle(
@@ -210,7 +179,7 @@ internal fun VinylCanvas(
             center = center
         )
 
-        // ── 6. EDGE DARKENING ─────────────────────────────────────────────────
+        // ── 5. EDGE DARKENING ─────────────────────────────────────────────────
         // Transparent from center to 92% of the radius, then fades to near-
         // black at the rim — gives the disc physical depth and a pressed edge.
         drawCircle(
@@ -227,7 +196,7 @@ internal fun VinylCanvas(
             center = center
         )
 
-        // ── 7. CENTER LABEL ───────────────────────────────────────────────────
+        // ── 6. CENTER LABEL ───────────────────────────────────────────────────
         // Flat label disc + a thin inner shadow ring that separates it from
         // the groove area and gives the edge a slight pressed-in appearance.
         drawCircle(color = skinLabelColor, radius = labelRadius, center = center)

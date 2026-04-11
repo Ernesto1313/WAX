@@ -5,9 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.example.wax.domain.model.LockScreenTheme
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -30,8 +28,6 @@ class UserPreferencesRepository @Inject constructor(
             booleanPreferencesKey("weekly_notif_enabled")
         private val KEY_ONBOARDING_COMPLETED =
             booleanPreferencesKey("onboarding_completed")
-        private val KEY_LOCK_SCREEN_THEME =
-            stringPreferencesKey("lock_screen_theme")
     }
 
     // ── Notification listener dismissed ──────────────────────────────────────
@@ -66,14 +62,4 @@ class UserPreferencesRepository @Inject constructor(
         context.userPrefsDataStore.edit { it[KEY_ONBOARDING_COMPLETED] = true }
     }
 
-    // ── Lock screen theme ─────────────────────────────────────────────────────
-
-    val lockScreenTheme: Flow<LockScreenTheme> = context.userPrefsDataStore.data
-        .map { prefs -> LockScreenTheme.fromKey(prefs[KEY_LOCK_SCREEN_THEME] ?: LockScreenTheme.CLASSIC.key) }
-
-    suspend fun readLockScreenTheme(): LockScreenTheme = lockScreenTheme.first()
-
-    suspend fun setLockScreenTheme(theme: LockScreenTheme) {
-        context.userPrefsDataStore.edit { it[KEY_LOCK_SCREEN_THEME] = theme.key }
-    }
 }

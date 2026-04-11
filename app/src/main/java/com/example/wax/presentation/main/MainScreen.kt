@@ -159,8 +159,6 @@ fun MainScreen(
             ) {
                 TurntableSection(
                     coverUrl = uiState.coverUrl,
-                    vinylDominantColor = uiState.vinylDominantColor,
-                    vinylVibrantColor = uiState.vinylVibrantColor,
                     isPlaying = uiState.isPlaying,
                     isSessionActive = uiState.isSessionActive,
                     turntableSkin = TurntableSkin.DARK,

@@ -5,13 +5,8 @@ import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
 import com.example.wax.core.auth.TokenManager
 import com.example.wax.core.preferences.UserPreferencesRepository
-import com.example.wax.core.work.WeeklyAlbumWorker
-import com.example.wax.domain.model.LockScreenTheme
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -22,15 +17,13 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 data class SettingsUiState(
     val isSpotifyConnected: Boolean = false,
     val weeklyNotifEnabled: Boolean = true,
     val hasNotificationAccess: Boolean = false,
-    val hasOverlayPermission: Boolean = false,
-    val lockScreenTheme: LockScreenTheme = LockScreenTheme.CLASSIC
+    val hasOverlayPermission: Boolean = false
 )
 
 sealed class SettingsEvent {
@@ -52,7 +45,6 @@ class SettingsViewModel @Inject constructor(
 
     init {
         collectWeeklyNotif()
-        collectLockScreenTheme()
         checkSpotifyConnection()
         refreshOverlayPermission()
     }
@@ -74,14 +66,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    private fun collectLockScreenTheme() {
-        viewModelScope.launch {
-            userPreferencesRepository.lockScreenTheme.collect { theme ->
-                _uiState.update { it.copy(lockScreenTheme = theme) }
-            }
-        }
-    }
-
     // ── Public actions ────────────────────────────────────────────────────────
 
     /** Called on ON_RESUME so the notification access badge updates live. */
@@ -97,27 +81,8 @@ class SettingsViewModel @Inject constructor(
         _uiState.update { it.copy(hasOverlayPermission = Settings.canDrawOverlays(context)) }
     }
 
-    fun setLockScreenTheme(theme: LockScreenTheme) {
-        viewModelScope.launch { userPreferencesRepository.setLockScreenTheme(theme) }
-    }
-
     fun setWeeklyNotifEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            userPreferencesRepository.setWeeklyNotifEnabled(enabled)
-            val wm = WorkManager.getInstance(context)
-            if (enabled) {
-                val request = PeriodicWorkRequestBuilder<WeeklyAlbumWorker>(7, TimeUnit.DAYS)
-                    .setInitialDelay(7, TimeUnit.DAYS)
-                    .build()
-                wm.enqueueUniquePeriodicWork(
-                    WeeklyAlbumWorker.WORK_NAME,
-                    ExistingPeriodicWorkPolicy.REPLACE,
-                    request
-                )
-            } else {
-                wm.cancelUniqueWork(WeeklyAlbumWorker.WORK_NAME)
-            }
-        }
+        viewModelScope.launch { userPreferencesRepository.setWeeklyNotifEnabled(enabled) }
     }
 
     fun disconnect() {

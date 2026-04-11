@@ -9,7 +9,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,8 +16,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -50,7 +47,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.wax.BuildConfig
-import com.example.wax.domain.model.LockScreenTheme
 
 private val BackgroundColor = Color(0xFF0D0D0D)
 private val SurfaceColor    = Color(0xFF1A1A1A)
@@ -103,29 +99,6 @@ fun SettingsScreen(
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
         )
 
-        HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
-        Spacer(Modifier.height(8.dp))
-
-        // ── Lock Screen Style ─────────────────────────────────────────────────
-        SectionHeader("Lock Screen Style")
-
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp)
-        ) {
-            items(LockScreenTheme.entries) { theme ->
-                LockScreenThemeCard(
-                    theme    = theme,
-                    selected = uiState.lockScreenTheme == theme,
-                    onClick  = { viewModel.setLockScreenTheme(theme) }
-                )
-            }
-        }
-
-        Spacer(Modifier.height(8.dp))
         HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
         Spacer(Modifier.height(8.dp))
 
@@ -286,52 +259,6 @@ fun SettingsScreen(
         }
 
         Spacer(Modifier.height(32.dp))
-    }
-}
-
-// ── Lock screen theme card ─────────────────────────────────────────────────────
-
-@Composable
-private fun LockScreenThemeCard(
-    theme: LockScreenTheme,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val previewColor = when (theme) {
-        LockScreenTheme.CLASSIC  -> Color(0xFF080810)
-        LockScreenTheme.SLEEVE   -> Color(0xFF1C1410)
-        LockScreenTheme.WAVEFORM -> Color(0xFF080820)
-    }
-
-    Column(
-        modifier = modifier
-            .width(90.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(SurfaceColor)
-            .border(
-                width = if (selected) 2.dp else 1.dp,
-                color = if (selected) SpotifyGreen else Color.White.copy(alpha = 0.10f),
-                shape = RoundedCornerShape(12.dp)
-            )
-            .clickable(onClick = onClick)
-            .padding(10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(58.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(previewColor)
-        )
-        Text(
-            text       = theme.displayName,
-            color      = if (selected) SpotifyGreen else Color.White,
-            fontSize   = 11.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
-        )
     }
 }
 

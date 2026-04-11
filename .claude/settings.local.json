@@ -9,7 +9,13 @@
       "Bash(git rm:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(head -n 1007 \"C:\\\\Users\\\\ernes\\\\AndroidStudioProjects\\\\wax\\\\app\\\\src\\\\main\\\\java\\\\com\\\\example\\\\wax\\\\presentation\\\\lockscreen\\\\LockScreenActivity.kt\")",
+      "Read(//tmp/**)",
+      "Bash(rm \"C:\\\\Users\\\\ernes\\\\AndroidStudioProjects\\\\wax\\\\app\\\\src\\\\main\\\\java\\\\com\\\\example\\\\wax\\\\core\\\\dream\\\\WaxDreamService.kt\")",
+      "Bash(rm \"C:\\\\Users\\\\ernes\\\\AndroidStudioProjects\\\\wax\\\\app\\\\src\\\\main\\\\java\\\\com\\\\example\\\\wax\\\\core\\\\work\\\\WeeklyAlbumWorker.kt\")",
+      "Bash(rm \"C:\\\\Users\\\\ernes\\\\AndroidStudioProjects\\\\wax\\\\app\\\\src\\\\main\\\\java\\\\com\\\\example\\\\wax\\\\domain\\\\model\\\\LockScreenTheme.kt\")",
+      "Bash(./gradlew :app:compileDebugKotlin)"
     ]
   }
 }

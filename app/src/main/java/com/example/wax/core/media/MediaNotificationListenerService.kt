@@ -12,15 +12,8 @@ import android.media.session.PlaybackState
 import android.service.notification.NotificationListenerService
 import android.util.Log
 import androidx.core.content.ContextCompat
-import com.example.wax.core.preferences.UserPreferencesRepository
 import com.example.wax.presentation.lockscreen.LockScreenActivity
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -38,9 +31,7 @@ import javax.inject.Inject
 class MediaNotificationListenerService : NotificationListenerService() {
 
     @Inject lateinit var mediaSessionRepository: MediaSessionRepository
-    @Inject lateinit var userPreferencesRepository: UserPreferencesRepository
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var sessionManager: MediaSessionManager? = null
     private val registeredControllers = mutableListOf<MediaController>()
     private var receiverRegistered = false
@@ -54,16 +45,10 @@ class MediaNotificationListenerService : NotificationListenerService() {
             when (intent.action) {
                 Intent.ACTION_SCREEN_OFF -> {
                     if (mediaSessionRepository.state.value.isPlaying) {
-                        serviceScope.launch {
-                            val theme = userPreferencesRepository.readLockScreenTheme()
-                            withContext(Dispatchers.Main) {
-                                startActivity(
-                                    Intent(this@MediaNotificationListenerService, LockScreenActivity::class.java)
-                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-                                        .putExtra("extra_theme", theme.key)
-                                )
-                            }
-                        }
+                        startActivity(
+                            Intent(this@MediaNotificationListenerService, LockScreenActivity::class.java)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                        )
                     }
                 }
                 Intent.ACTION_USER_PRESENT -> {
@@ -123,7 +108,6 @@ class MediaNotificationListenerService : NotificationListenerService() {
             unregisterReceiver(screenEventReceiver)
             receiverRegistered = false
         }
-        serviceScope.cancel()
         super.onDestroy()
     }
 

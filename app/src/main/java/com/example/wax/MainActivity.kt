@@ -19,19 +19,14 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.example.wax.core.auth.SpotifyAuthManager
 import com.example.wax.core.media.MediaPlaybackService
-import com.example.wax.core.work.WeeklyAlbumWorker
 import com.example.wax.presentation.WaxNavGraph
 import com.example.wax.presentation.main.AuthEvent
 import com.example.wax.presentation.main.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -60,7 +55,6 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         requestPostNotificationsIfNeeded()
-        scheduleWeeklyAlbumWork()
         observeAuthEvents()
         maybeStartMediaPlaybackService()
 
@@ -95,17 +89,6 @@ class MainActivity : ComponentActivity() {
         ) {
             requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-    }
-
-    private fun scheduleWeeklyAlbumWork() {
-        val request = PeriodicWorkRequestBuilder<WeeklyAlbumWorker>(7, TimeUnit.DAYS)
-            .setInitialDelay(7, TimeUnit.DAYS)
-            .build()
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            WeeklyAlbumWorker.WORK_NAME,
-            ExistingPeriodicWorkPolicy.KEEP,
-            request
-        )
     }
 
     /**

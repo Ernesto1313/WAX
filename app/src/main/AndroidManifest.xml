@@ -84,21 +84,6 @@
             android:foregroundServiceType="mediaPlayback"
             android:exported="false" />
 
-        <!--
-            Android Dream (screen saver) — spinning vinyl shown while the device is
-            charging or idle. Enable via Settings → Display → Screen saver.
-        -->
-        <service
-            android:name=".core.dream.WaxDreamService"
-            android:label="Wax"
-            android:permission="android.permission.BIND_DREAM_SERVICE"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.service.dreams.DreamService" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </service>
-
     </application>
 
 </manifest>
