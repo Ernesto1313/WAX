@@ -11,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -29,14 +30,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Pause
-import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.SkipNext
-import androidx.compose.material.icons.rounded.SkipPrevious
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -51,8 +47,10 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -77,6 +75,8 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import kotlin.math.cos
+import kotlin.math.sin
 import javax.inject.Inject
 
 private val LockBg    = Color(0xFF080810)
@@ -361,7 +361,7 @@ private fun LockVinyl(
     }
 }
 
-// ── Playback controls ──────────────────────────────────────────────────────────
+// ── Analog playback controls ───────────────────────────────────────────────────
 
 @Composable
 private fun LockControls(
@@ -370,43 +370,159 @@ private fun LockControls(
     onNext: () -> Unit,
     onPrevious: () -> Unit
 ) {
-    Row(
-        verticalAlignment     = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(36.dp)
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        IconButton(onClick = onPrevious) {
-            Icon(
-                imageVector        = Icons.Rounded.SkipPrevious,
-                contentDescription = "Previous",
-                tint               = Color.White,
-                modifier           = Modifier.size(34.dp)
-            )
-        }
-
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(52.dp)
-                .background(Color.White, CircleShape)
-                .clickable(onClick = onPlayPause)
+        Row(
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(36.dp)
         ) {
-            Icon(
-                imageVector        = if (isPlaying) Icons.Rounded.Pause
-                                     else Icons.Rounded.PlayArrow,
-                contentDescription = if (isPlaying) "Pause" else "Play",
-                tint               = LockBg,
-                modifier           = Modifier.size(26.dp)
-            )
+            TonearmButton(isNext = false, onClick = onPrevious)
+            PlayLever(isPlaying = isPlaying, onClick = onPlayPause)
+            TonearmButton(isNext = true, onClick = onNext)
         }
+        RotaryKnob()
+    }
+}
 
-        IconButton(onClick = onNext) {
-            Icon(
-                imageVector        = Icons.Rounded.SkipNext,
-                contentDescription = "Next",
-                tint               = Color.White,
-                modifier           = Modifier.size(34.dp)
+/**
+ * A physical lever/toggle — a rounded-rectangle pill that tilts left when
+ * playing and right when paused, animating smoothly between states.
+ */
+@Composable
+private fun PlayLever(isPlaying: Boolean, onClick: () -> Unit) {
+    val rotation by animateFloatAsState(
+        targetValue    = if (isPlaying) -15f else 15f,
+        animationSpec  = tween(300),
+        label          = "lever_rotation"
+    )
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .width(22.dp)
+            .height(60.dp)
+            .rotate(rotation)
+            .background(
+                brush = Brush.verticalGradient(
+                    listOf(Color(0xFFE0E0E0), Color(0xFF787878))
+                ),
+                shape = RoundedCornerShape(11.dp)
+            )
+            .clickable(onClick = onClick)
+    ) {
+        // Center groove — a subtle indicator mark on the lever face
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val cx = size.width / 2f
+            drawLine(
+                color       = Color(0xFF505050),
+                start       = Offset(cx, size.height * 0.36f),
+                end         = Offset(cx, size.height * 0.64f),
+                strokeWidth = 1.5.dp.toPx(),
+                cap         = StrokeCap.Round
             )
         }
+    }
+}
+
+/**
+ * Tonearm-inspired button drawn on Canvas.
+ * A pivot knob at the top feeds a diagonal arm down to a stylus-head dot.
+ * A small chevron near the arm midpoint indicates playback direction.
+ */
+@Composable
+private fun TonearmButton(isNext: Boolean, onClick: () -> Unit) {
+    val silver = Color(0xFFBBBBBB)
+    Canvas(
+        modifier = Modifier
+            .size(52.dp)
+            .clickable(onClick = onClick)
+    ) {
+        val w = size.width
+        val h = size.height
+
+        // Pivot at top-center
+        val pivot = Offset(w * 0.50f, h * 0.18f)
+        // Stylus tip angled toward the playback direction
+        val tipX = if (isNext) w * 0.80f else w * 0.20f
+        val tip  = Offset(tipX, h * 0.80f)
+
+        // Arm
+        drawLine(silver, pivot, tip, 2.5.dp.toPx(), cap = StrokeCap.Round)
+
+        // Pivot knob
+        drawCircle(silver, 5.dp.toPx(), pivot)
+        drawCircle(Color(0xFF1A1A1A), 3.dp.toPx(), pivot)
+
+        // Stylus head
+        drawCircle(Color(0xFFEEEEEE), 5.dp.toPx(), tip)
+        drawCircle(Color(0xFF444444), 2.5.dp.toPx(), tip)
+
+        // Direction chevron near arm midpoint
+        val midX = (pivot.x + tip.x) / 2f
+        val midY = (pivot.y + tip.y) / 2f
+        val cv   = 5.dp.toPx()
+        val dir  = if (isNext) 1f else -1f
+        drawLine(silver, Offset(midX - cv * dir, midY - cv * 0.5f), Offset(midX, midY), 1.5.dp.toPx(), cap = StrokeCap.Round)
+        drawLine(silver, Offset(midX - cv * dir, midY + cv * 0.5f), Offset(midX, midY), 1.5.dp.toPx(), cap = StrokeCap.Round)
+    }
+}
+
+/**
+ * Decorative rotary volume knob drawn on Canvas.
+ * Static — volume is adjusted via hardware buttons.
+ * The indicator line is fixed at the mid-level position (pointing down).
+ */
+@Composable
+private fun RotaryKnob(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier.size(40.dp)) {
+        val r      = size.minDimension / 2f
+        val center = Offset(r, r)
+
+        // Travel arc (135° → 405° = 270° sweep)
+        drawArc(
+            color      = Color.White.copy(alpha = 0.13f),
+            startAngle = 135f,
+            sweepAngle = 270f,
+            useCenter  = false,
+            topLeft    = Offset(center.x - r, center.y - r),
+            size       = Size(r * 2f, r * 2f),
+            style      = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+        )
+
+        // Knob body
+        drawCircle(
+            brush = Brush.radialGradient(
+                listOf(Color(0xFF3A3A3A), Color(0xFF181818)),
+                center, r * 0.70f
+            ),
+            radius = r * 0.70f,
+            center = center
+        )
+        drawCircle(
+            color  = Color(0xFF484848),
+            radius = r * 0.70f,
+            center = center,
+            style  = Stroke(1.dp.toPx())
+        )
+
+        // Position indicator — mid-level = 135° + 135° = 270° (pointing straight down)
+        val indicatorRad = Math.toRadians(270.0)
+        val innerR = r * 0.32f
+        val outerR = r * 0.64f
+        drawLine(
+            color       = Color.White.copy(alpha = 0.75f),
+            start       = Offset(
+                center.x + (innerR * cos(indicatorRad)).toFloat(),
+                center.y + (innerR * sin(indicatorRad)).toFloat()
+            ),
+            end         = Offset(
+                center.x + (outerR * cos(indicatorRad)).toFloat(),
+                center.y + (outerR * sin(indicatorRad)).toFloat()
+            ),
+            strokeWidth = 2.dp.toPx(),
+            cap         = StrokeCap.Round
+        )
     }
 }
 

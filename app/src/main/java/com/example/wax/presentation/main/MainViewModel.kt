@@ -1,20 +1,28 @@
 package com.example.wax.presentation.main
 
 import android.content.Context
+import android.graphics.drawable.BitmapDrawable
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.core.app.NotificationManagerCompat
+import coil.ImageLoader
+import coil.request.ImageRequest
+import coil.request.SuccessResult
 import com.example.wax.core.auth.SpotifyAuthManager
 import com.example.wax.core.auth.TokenManager
 import com.example.wax.core.media.MediaSessionRepository
 import com.example.wax.core.preferences.UserPreferencesRepository
+import com.example.wax.core.storage.ArtworkCacheManager
 import com.example.wax.data.repository.AlbumHistoryRepository
 import com.example.wax.data.repository.SpotifyRepository
 import com.example.wax.domain.model.Album
 import com.example.wax.domain.model.Track
 import com.example.wax.domain.model.TurntableSkin
 import com.example.wax.domain.usecase.GetWeeklyAlbumUseCase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
@@ -63,6 +71,7 @@ class MainViewModel @Inject constructor(
     private val mediaSessionRepository: MediaSessionRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
     private val albumHistoryRepository: AlbumHistoryRepository,
+    private val artworkCacheManager: ArtworkCacheManager,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -90,6 +99,7 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             _onboardingCompleted.value = userPreferencesRepository.readOnboardingCompleted()
         }
+        viewModelScope.launch(Dispatchers.IO) { artworkCacheManager.clearOldArtwork() }
         viewModelScope.launch {
             userPreferencesRepository.selectedSkin.collect { skin ->
                 _uiState.update { it.copy(selectedSkin = skin) }
@@ -177,13 +187,16 @@ class MainViewModel @Inject constructor(
                     album.copy(tracks = tracks)
                 } else album
 
+                val coverUrl = artworkCacheManager.resolveUrl(albumWithTracks.id, albumWithTracks.coverUrl)
+                cacheArtworkIfNeeded(albumWithTracks.id, albumWithTracks.coverUrl)
+
                 // Single atomic update — album enters state only once tracks are ready
                 _uiState.update {
                     it.copy(
                         albumTitle      = albumWithTracks.name,
                         artistName      = albumWithTracks.artistNames.joinToString(", "),
                         year            = albumWithTracks.releaseDate.take(4),
-                        coverUrl        = albumWithTracks.coverUrl,
+                        coverUrl        = coverUrl,
                         spotifyUrl      = albumWithTracks.spotifyUrl,
                         album           = albumWithTracks,
                         currentTrackId  = null,
@@ -193,8 +206,8 @@ class MainViewModel @Inject constructor(
                     )
                 }
                 albumHistoryRepository.saveAlbum(albumWithTracks)
-                if (albumWithTracks.coverUrl.isNotEmpty()) {
-                    mediaSessionRepository.setAlbumCover(albumWithTracks.coverUrl)
+                if (coverUrl.isNotEmpty()) {
+                    mediaSessionRepository.setAlbumCover(coverUrl)
                 }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "fetchNowPlayingAlbum failed for '$albumName'", e)
@@ -329,13 +342,16 @@ class MainViewModel @Inject constructor(
                 return
             }
 
+            val coverUrl = artworkCacheManager.resolveUrl(albumWithTracks.id, albumWithTracks.coverUrl)
+            cacheArtworkIfNeeded(albumWithTracks.id, albumWithTracks.coverUrl)
+
             // Single atomic update — album only enters state once tracks are ready
             _uiState.update {
                 it.copy(
                     albumTitle      = albumWithTracks.name,
                     artistName      = albumWithTracks.artistNames.joinToString(", "),
                     year            = albumWithTracks.releaseDate.take(4),
-                    coverUrl        = albumWithTracks.coverUrl,
+                    coverUrl        = coverUrl,
                     spotifyUrl      = albumWithTracks.spotifyUrl,
                     isLoading       = false,
                     isTracksLoading = false,
@@ -347,8 +363,8 @@ class MainViewModel @Inject constructor(
             }
             _isReady.value = true
             albumHistoryRepository.saveAlbum(albumWithTracks)
-            if (albumWithTracks.coverUrl.isNotEmpty()) {
-                mediaSessionRepository.setAlbumCover(albumWithTracks.coverUrl)
+            if (coverUrl.isNotEmpty()) {
+                mediaSessionRepository.setAlbumCover(coverUrl)
             }
         } catch (e: Exception) {
             Log.e("MainViewModel", "loadWeeklyAlbum failed", e)
@@ -357,4 +373,29 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    // ── Artwork caching ───────────────────────────────────────────────────────
+
+    /**
+     * Loads [networkUrl] via Coil on IO and writes it to internal storage via
+     * [ArtworkCacheManager]. No-ops if the artwork is already cached or the URL is empty.
+     */
+    private fun cacheArtworkIfNeeded(albumId: String, networkUrl: String) {
+        if (networkUrl.isEmpty()) return
+        if (artworkCacheManager.loadArtwork(albumId) != null) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val result = ImageLoader(context).execute(
+                    ImageRequest.Builder(context)
+                        .data(networkUrl)
+                        .allowHardware(false)
+                        .size(512, 512)
+                        .build()
+                ) as? SuccessResult ?: return@launch
+                val bitmap = (result.drawable as? BitmapDrawable)?.bitmap ?: return@launch
+                artworkCacheManager.saveArtwork(albumId, bitmap)
+            } catch (e: Exception) {
+                Log.w("MainViewModel", "Artwork caching failed for $albumId", e)
+            }
+        }
+    }
 }

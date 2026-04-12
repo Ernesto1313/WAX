@@ -38,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -182,6 +183,24 @@ fun DetailScreen(
                 )
             }
 
+            // ── Lyrics header ────────────────────────────────────────────────
+            item {
+                Spacer(Modifier.height(8.dp))
+                SectionHeader("Lyrics")
+            }
+
+            // ── Lyrics section ───────────────────────────────────────────────
+            item {
+                val firstTrack = album.tracks.firstOrNull()
+                if (firstTrack != null) {
+                    LyricsSection(
+                        track       = firstTrack,
+                        albumArtist = album.artistNames.firstOrNull() ?: "",
+                        context     = context
+                    )
+                }
+            }
+
             // ── About header ─────────────────────────────────────────────────
             item {
                 Spacer(Modifier.height(8.dp))
@@ -288,14 +307,15 @@ private fun SectionHeader(title: String) {
 
 @Composable
 private fun TrackRow(track: Track, isCurrentlyPlaying: Boolean) {
+    val context   = LocalContext.current
     val nameColor = if (isCurrentlyPlaying) SpotifyGreen else Color.White
-    val rowBg = if (isCurrentlyPlaying) Color.White.copy(alpha = 0.04f) else Color.Transparent
+    val rowBg     = if (isCurrentlyPlaying) Color.White.copy(alpha = 0.04f) else Color.Transparent
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(rowBg)
-            .padding(horizontal = 24.dp, vertical = 12.dp),
+            .padding(horizontal = 24.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Track number or animated equalizer
@@ -333,6 +353,18 @@ private fun TrackRow(track: Track, isCurrentlyPlaying: Boolean) {
                     overflow = TextOverflow.Ellipsis
                 )
             }
+            // Lyrics link
+            Text(
+                text = "View Lyrics",
+                color = TextSecondary.copy(alpha = 0.55f),
+                fontSize = 11.sp,
+                modifier = Modifier.clickable {
+                    val artist = track.artistNames.firstOrNull() ?: ""
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(lyricsSearchUrl(track.name, artist)))
+                    )
+                }
+            )
         }
 
         Spacer(Modifier.width(12.dp))
@@ -429,7 +461,57 @@ private fun LabeledValue(label: String, value: String) {
     }
 }
 
+// ── Lyrics section ─────────────────────────────────────────────────────────────
+
+@Composable
+private fun LyricsSection(
+    track: Track,
+    albumArtist: String,
+    context: android.content.Context
+) {
+    val artist = track.artistNames.firstOrNull()?.ifEmpty { albumArtist } ?: albumArtist
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 8.dp)
+    ) {
+        Text(
+            text = "\"${track.name}\"",
+            color = Color.White,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = "First track on this album",
+            color = TextSecondary,
+            fontSize = 12.sp
+        )
+        Spacer(Modifier.height(8.dp))
+        TextButton(
+            onClick = {
+                context.startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(lyricsSearchUrl(track.name, artist)))
+                )
+            },
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp)
+        ) {
+            Text(
+                text = "Search lyrics on Google →",
+                color = SpotifyGreen,
+                fontSize = 14.sp
+            )
+        }
+    }
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
+
+private fun lyricsSearchUrl(trackName: String, artistName: String): String =
+    "https://www.google.com/search?q=" +
+    "$trackName $artistName lyrics".trim().replace(" ", "+")
 
 private fun formatDuration(durationMs: Int): String {
     val totalSec = durationMs / 1000
