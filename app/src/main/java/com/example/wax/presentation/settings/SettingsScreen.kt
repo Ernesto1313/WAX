@@ -23,8 +23,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,7 +48,6 @@ import com.example.wax.BuildConfig
 
 private val BackgroundColor = Color(0xFF0D0D0D)
 private val SurfaceColor    = Color(0xFF1A1A1A)
-private val SurfaceHigh     = Color(0xFF242424)
 private val SpotifyGreen    = Color(0xFF1DB954)
 private val TextSecondary   = Color(0xFFAAAAAA)
 private val DangerRed       = Color(0xFFE05252)
@@ -141,28 +138,6 @@ fun SettingsScreen(
 
         SettingsRow {
             Column(modifier = Modifier.weight(1f)) {
-                Text("Weekly album notification", color = Color.White, fontSize = 15.sp)
-                Text(
-                    "Get notified every week when your new album is ready",
-                    color = TextSecondary,
-                    fontSize = 13.sp
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Switch(
-                checked = uiState.weeklyNotifEnabled,
-                onCheckedChange = { viewModel.setWeeklyNotifEnabled(it) },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor   = Color.White,
-                    checkedTrackColor   = SpotifyGreen,
-                    uncheckedThumbColor = Color.White,
-                    uncheckedTrackColor = SurfaceHigh
-                )
-            )
-        }
-
-        SettingsRow {
-            Column(modifier = Modifier.weight(1f)) {
                 val accessLabel = if (uiState.hasNotificationAccess) "Granted" else "Not granted"
                 val accessColor = if (uiState.hasNotificationAccess) SpotifyGreen else DangerRed
                 Text("Notification listener access", color = Color.White, fontSize = 15.sp)
@@ -184,25 +159,6 @@ fun SettingsScreen(
 
         // ── Display ───────────────────────────────────────────────────────────
         SectionHeader("Display")
-
-        SettingsRow {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Screen saver", color = Color.White, fontSize = 15.sp)
-                Text(
-                    "Show a spinning vinyl while charging",
-                    color = TextSecondary,
-                    fontSize = 13.sp
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            TextButton(
-                onClick = {
-                    context.startActivity(Intent(android.provider.Settings.ACTION_DREAM_SETTINGS))
-                }
-            ) {
-                Text("Set up", color = SpotifyGreen, fontSize = 13.sp)
-            }
-        }
 
         Row(
             modifier = Modifier

@@ -24,8 +24,6 @@ class UserPreferencesRepository @Inject constructor(
     companion object {
         private val KEY_NOTIF_LISTENER_DISMISSED =
             booleanPreferencesKey("notif_listener_dismissed")
-        private val KEY_WEEKLY_NOTIF_ENABLED =
-            booleanPreferencesKey("weekly_notif_enabled")
         private val KEY_ONBOARDING_COMPLETED =
             booleanPreferencesKey("onboarding_completed")
     }
@@ -40,15 +38,6 @@ class UserPreferencesRepository @Inject constructor(
 
     suspend fun setNotifListenerDismissed() {
         context.userPrefsDataStore.edit { it[KEY_NOTIF_LISTENER_DISMISSED] = true }
-    }
-
-    // ── Weekly notification ───────────────────────────────────────────────────
-
-    val weeklyNotifEnabled: Flow<Boolean> = context.userPrefsDataStore.data
-        .map { prefs -> prefs[KEY_WEEKLY_NOTIF_ENABLED] ?: true }
-
-    suspend fun setWeeklyNotifEnabled(enabled: Boolean) {
-        context.userPrefsDataStore.edit { it[KEY_WEEKLY_NOTIF_ENABLED] = enabled }
     }
 
     // ── Onboarding ────────────────────────────────────────────────────────────

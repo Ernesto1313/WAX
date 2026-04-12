@@ -6,7 +6,6 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.wax.core.auth.TokenManager
-import com.example.wax.core.preferences.UserPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -21,7 +20,6 @@ import javax.inject.Inject
 
 data class SettingsUiState(
     val isSpotifyConnected: Boolean = false,
-    val weeklyNotifEnabled: Boolean = true,
     val hasNotificationAccess: Boolean = false,
     val hasOverlayPermission: Boolean = false
 )
@@ -32,7 +30,6 @@ sealed class SettingsEvent {
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val userPreferencesRepository: UserPreferencesRepository,
     private val tokenManager: TokenManager,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
@@ -44,20 +41,11 @@ class SettingsViewModel @Inject constructor(
     val events: SharedFlow<SettingsEvent> = _events.asSharedFlow()
 
     init {
-        collectWeeklyNotif()
         checkSpotifyConnection()
         refreshOverlayPermission()
     }
 
     // ── Init collectors ───────────────────────────────────────────────────────
-
-    private fun collectWeeklyNotif() {
-        viewModelScope.launch {
-            userPreferencesRepository.weeklyNotifEnabled.collect { enabled ->
-                _uiState.update { it.copy(weeklyNotifEnabled = enabled) }
-            }
-        }
-    }
 
     private fun checkSpotifyConnection() {
         viewModelScope.launch {
@@ -79,10 +67,6 @@ class SettingsViewModel @Inject constructor(
     /** Called on ON_RESUME so the overlay permission badge updates after the user returns from Settings. */
     fun refreshOverlayPermission() {
         _uiState.update { it.copy(hasOverlayPermission = Settings.canDrawOverlays(context)) }
-    }
-
-    fun setWeeklyNotifEnabled(enabled: Boolean) {
-        viewModelScope.launch { userPreferencesRepository.setWeeklyNotifEnabled(enabled) }
     }
 
     fun disconnect() {
