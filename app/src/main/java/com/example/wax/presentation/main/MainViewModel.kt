@@ -13,6 +13,7 @@ import com.example.wax.data.repository.AlbumHistoryRepository
 import com.example.wax.data.repository.SpotifyRepository
 import com.example.wax.domain.model.Album
 import com.example.wax.domain.model.Track
+import com.example.wax.domain.model.TurntableSkin
 import com.example.wax.domain.usecase.GetWeeklyAlbumUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -44,7 +45,8 @@ data class MainUiState(
     // true = live from an active Spotify session, false = weekly curated pick
     val isNowPlaying: Boolean = false,
     // true while tracks are being fetched — UI shows a spinner instead of an empty list
-    val isTracksLoading: Boolean = false
+    val isTracksLoading: Boolean = false,
+    val selectedSkin: TurntableSkin = TurntableSkin.DARK
 )
 
 // One-shot events that MainActivity must act on (not suitable for UI state)
@@ -87,6 +89,11 @@ class MainViewModel @Inject constructor(
         }
         viewModelScope.launch {
             _onboardingCompleted.value = userPreferencesRepository.readOnboardingCompleted()
+        }
+        viewModelScope.launch {
+            userPreferencesRepository.selectedSkin.collect { skin ->
+                _uiState.update { it.copy(selectedSkin = skin) }
+            }
         }
         checkAuthAndLoad()
         collectMediaSession()

@@ -15,14 +15,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,7 +37,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -45,9 +48,13 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.wax.BuildConfig
+import com.example.wax.domain.model.TurntableSkin
+import com.example.wax.presentation.common.VinylCanvas
+import com.example.wax.presentation.common.displayName
 
 private val BackgroundColor = Color(0xFF0D0D0D)
 private val SurfaceColor    = Color(0xFF1A1A1A)
+private val SurfaceHigh     = Color(0xFF2A2A2A)
 private val SpotifyGreen    = Color(0xFF1DB954)
 private val TextSecondary   = Color(0xFFAAAAAA)
 private val DangerRed       = Color(0xFFE05252)
@@ -138,6 +145,28 @@ fun SettingsScreen(
 
         SettingsRow {
             Column(modifier = Modifier.weight(1f)) {
+                Text("Weekly album reminder", color = Color.White, fontSize = 15.sp)
+                Text(
+                    "Every Sunday at 9:00",
+                    color = TextSecondary,
+                    fontSize = 13.sp
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Switch(
+                checked = uiState.weeklyNotifEnabled,
+                onCheckedChange = { viewModel.setWeeklyNotifEnabled(it) },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor   = Color.White,
+                    checkedTrackColor   = SpotifyGreen,
+                    uncheckedThumbColor = Color.White,
+                    uncheckedTrackColor = SurfaceHigh
+                )
+            )
+        }
+
+        SettingsRow {
+            Column(modifier = Modifier.weight(1f)) {
                 val accessLabel = if (uiState.hasNotificationAccess) "Granted" else "Not granted"
                 val accessColor = if (uiState.hasNotificationAccess) SpotifyGreen else DangerRed
                 Text("Notification listener access", color = Color.White, fontSize = 15.sp)
@@ -152,6 +181,18 @@ fun SettingsScreen(
                 Text("Manage", color = SpotifyGreen, fontSize = 13.sp)
             }
         }
+
+        Spacer(Modifier.height(8.dp))
+        HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+        Spacer(Modifier.height(8.dp))
+
+        // ── Appearance ────────────────────────────────────────────────────────
+        SectionHeader("Appearance")
+
+        SkinSelector(
+            selectedSkin = uiState.selectedSkin,
+            onSkinSelected = { viewModel.setSelectedSkin(it) }
+        )
 
         Spacer(Modifier.height(8.dp))
         HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
@@ -215,6 +256,66 @@ fun SettingsScreen(
         }
 
         Spacer(Modifier.height(32.dp))
+    }
+}
+
+// ── Skin selector ──────────────────────────────────────────────────────────────
+
+@Composable
+private fun SkinSelector(
+    selectedSkin: TurntableSkin,
+    onSkinSelected: (TurntableSkin) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        TurntableSkin.entries.forEach { skin ->
+            SkinCard(
+                skin = skin,
+                isSelected = skin == selectedSkin,
+                onClick = { onSkinSelected(skin) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun SkinCard(
+    skin: TurntableSkin,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val borderColor = if (isSelected) SpotifyGreen else Color.White.copy(alpha = 0.12f)
+
+    Column(
+        modifier = modifier.clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .border(2.dp, borderColor, CircleShape)
+                .padding(3.dp)
+                .clip(CircleShape)
+        ) {
+            VinylCanvas(
+                skin                = skin,
+                labelRadiusFraction = 0.30f,
+                modifier            = Modifier.fillMaxSize()
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = skin.displayName(),
+            color = if (isSelected) SpotifyGreen else TextSecondary,
+            fontSize = 11.sp,
+            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+        )
     }
 }
 

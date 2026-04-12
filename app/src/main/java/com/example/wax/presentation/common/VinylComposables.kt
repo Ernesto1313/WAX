@@ -32,12 +32,55 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
-private val SpindleColor = Color(0xFF0D0D0D)
-
 // ── Skin helpers ───────────────────────────────────────────────────────────────
 
-internal fun TurntableSkin.baseColor()  = Color(0xFF0D0D0D)
-internal fun TurntableSkin.labelColor() = Color(0xFF1C1C1C)
+internal fun TurntableSkin.bodyGradientColors() = when (this) {
+    TurntableSkin.DARK         -> listOf(Color(0xFF1A1A1A), Color(0xFF000000))
+    TurntableSkin.VINTAGE_WOOD -> listOf(Color(0xFF5d3010), Color(0xFF1a0b00))
+    TurntableSkin.MINIMALIST   -> listOf(Color(0xFFf0f0f0), Color(0xFFd0d0d0))
+}
+
+internal fun TurntableSkin.labelColor() = when (this) {
+    TurntableSkin.DARK         -> Color(0xFF1C1C1C)
+    TurntableSkin.VINTAGE_WOOD -> Color(0xFF4a2010)
+    TurntableSkin.MINIMALIST   -> Color(0xFFd8d8d8)
+}
+
+internal fun TurntableSkin.grooveColor() = when (this) {
+    TurntableSkin.DARK         -> Color.White
+    TurntableSkin.VINTAGE_WOOD -> Color(0xFFc8a96e)
+    TurntableSkin.MINIMALIST   -> Color(0xFF888888)
+}
+
+internal fun TurntableSkin.grooveAlpha() = when (this) {
+    TurntableSkin.DARK         -> 0.08f
+    TurntableSkin.VINTAGE_WOOD -> 0.15f
+    TurntableSkin.MINIMALIST   -> 0.20f
+}
+
+internal fun TurntableSkin.highlightColor() = when (this) {
+    TurntableSkin.DARK         -> Color.White.copy(alpha = 0.12f)
+    TurntableSkin.VINTAGE_WOOD -> Color(0xFFFFAA44).copy(alpha = 0.18f)
+    TurntableSkin.MINIMALIST   -> Color.White.copy(alpha = 0.30f)
+}
+
+internal fun TurntableSkin.rimColor() = when (this) {
+    TurntableSkin.DARK         -> Color.Black.copy(alpha = 0.60f)
+    TurntableSkin.VINTAGE_WOOD -> Color(0xFF1a0b00).copy(alpha = 0.50f)
+    TurntableSkin.MINIMALIST   -> Color(0xFF888888).copy(alpha = 0.25f)
+}
+
+internal fun TurntableSkin.spindleColor() = when (this) {
+    TurntableSkin.DARK         -> Color(0xFF0D0D0D)
+    TurntableSkin.VINTAGE_WOOD -> Color(0xFF1a0b00)
+    TurntableSkin.MINIMALIST   -> Color(0xFFCCCCCC)
+}
+
+internal fun TurntableSkin.displayName() = when (this) {
+    TurntableSkin.DARK         -> "Dark"
+    TurntableSkin.VINTAGE_WOOD -> "Vintage"
+    TurntableSkin.MINIMALIST   -> "Minimal"
+}
 
 // ── Turntable section ─────────────────────────────────────────────────────────
 
@@ -82,10 +125,9 @@ internal fun TurntableSection(
                     .rotate(rotation.value)
             ) {
                 VinylCanvas(
-                    skinBaseColor        = turntableSkin.baseColor(),
-                    skinLabelColor       = turntableSkin.labelColor(),
-                    labelRadiusFraction  = labelRadiusFraction,
-                    modifier             = Modifier.fillMaxSize()
+                    skin                = turntableSkin,
+                    labelRadiusFraction = labelRadiusFraction,
+                    modifier            = Modifier.fillMaxSize()
                 )
                 AlbumArtLabel(
                     coverUrl = coverUrl,
@@ -96,7 +138,7 @@ internal fun TurntableSection(
                 Box(
                     modifier = Modifier
                         .size(8.dp)
-                        .background(SpindleColor, CircleShape)
+                        .background(turntableSkin.spindleColor(), CircleShape)
                 )
             }
             TonearmCanvas(modifier = Modifier.fillMaxSize())
@@ -108,11 +150,17 @@ internal fun TurntableSection(
 
 @Composable
 internal fun VinylCanvas(
-    skinBaseColor: Color,
-    skinLabelColor: Color,
+    skin: TurntableSkin,
     labelRadiusFraction: Float = 0.28f,
     modifier: Modifier = Modifier
 ) {
+    val bodyGradient    = skin.bodyGradientColors()
+    val labelColor      = skin.labelColor()
+    val grooveColor     = skin.grooveColor()
+    val grooveAlpha     = skin.grooveAlpha()
+    val highlightColor  = skin.highlightColor()
+    val rimColor        = skin.rimColor()
+
     Canvas(modifier = modifier) {
         val cx = size.width / 2f
         val cy = size.height / 2f
@@ -125,7 +173,7 @@ internal fun VinylCanvas(
         // ── 1. BASE BODY ──────────────────────────────────────────────────────
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(Color(0xFF1A1A1A), Color(0xFF000000)),
+                colors = bodyGradient,
                 center = center,
                 radius = r
             ),
@@ -134,16 +182,13 @@ internal fun VinylCanvas(
         )
 
         // ── 2. GROOVE RINGS ───────────────────────────────────────────────────
-        // 55 concentric rings; stroke alternates 1.2 / 0.7 dp every 3 rings,
-        // alpha oscillates between 0.06 and 0.12 via a seeded sin wave.
         val grooveCount = 55
         repeat(grooveCount) { i ->
             val t       = i.toFloat() / (grooveCount - 1)
             val grooveR = grooveStart + (grooveEnd - grooveStart) * t
             val strokePx = if (i % 3 == 0) 1.2.dp.toPx() else 0.7.dp.toPx()
-            val alpha   = 0.06f + (sin(i * 0.7) * 0.5 + 0.5).toFloat() * 0.06f
             drawCircle(
-                color  = Color.White.copy(alpha = alpha),
+                color  = grooveColor.copy(alpha = grooveAlpha),
                 radius = grooveR,
                 center = center,
                 style  = Stroke(width = strokePx)
@@ -151,15 +196,14 @@ internal fun VinylCanvas(
         }
 
         // ── 3. RADIAL MICRO-TEXTURE ───────────────────────────────────────────
-        // 80 hairline spokes from the label edge to 90% of the disc radius,
-        // simulating the microscopic groove texture visible on real vinyl.
         val twoPi = (2.0 * PI).toFloat()
+        val spokeAlpha = grooveAlpha * 0.35f
         repeat(80) { i ->
             val angle = (i.toFloat() / 80f) * twoPi
             val cosA  = cos(angle.toDouble()).toFloat()
             val sinA  = sin(angle.toDouble()).toFloat()
             drawLine(
-                color       = Color.White.copy(alpha = 0.03f),
+                color       = grooveColor.copy(alpha = spokeAlpha),
                 start       = Offset(cx + labelRadius * cosA, cy + labelRadius * sinA),
                 end         = Offset(cx + r * 0.9f * cosA,   cy + r * 0.9f * sinA),
                 strokeWidth = 0.3.dp.toPx()
@@ -167,11 +211,9 @@ internal fun VinylCanvas(
         }
 
         // ── 4. DIRECTIONAL HIGHLIGHT ──────────────────────────────────────────
-        // Soft white radial gradient anchored at upper-left, simulating a
-        // single overhead light source reflecting off the disc surface.
         drawCircle(
             brush = Brush.radialGradient(
-                colors = listOf(Color.White.copy(alpha = 0.12f), Color.Transparent),
+                colors = listOf(highlightColor, Color.Transparent),
                 center = Offset(cx - r * 0.35f, cy - r * 0.40f),
                 radius = r * 0.70f
             ),
@@ -180,14 +222,12 @@ internal fun VinylCanvas(
         )
 
         // ── 5. EDGE DARKENING ─────────────────────────────────────────────────
-        // Transparent from center to 92% of the radius, then fades to near-
-        // black at the rim — gives the disc physical depth and a pressed edge.
         drawCircle(
             brush = Brush.radialGradient(
                 colorStops = arrayOf(
                     0.00f to Color.Transparent,
                     0.92f to Color.Transparent,
-                    1.00f to Color.Black.copy(alpha = 0.60f)
+                    1.00f to rimColor
                 ),
                 center = center,
                 radius = r
@@ -197,9 +237,7 @@ internal fun VinylCanvas(
         )
 
         // ── 6. CENTER LABEL ───────────────────────────────────────────────────
-        // Flat label disc + a thin inner shadow ring that separates it from
-        // the groove area and gives the edge a slight pressed-in appearance.
-        drawCircle(color = skinLabelColor, radius = labelRadius, center = center)
+        drawCircle(color = labelColor, radius = labelRadius, center = center)
         drawCircle(
             color  = Color.Black.copy(alpha = 0.40f),
             radius = labelRadius,

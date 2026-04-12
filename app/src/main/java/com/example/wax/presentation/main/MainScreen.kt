@@ -161,7 +161,7 @@ fun MainScreen(
                     coverUrl = uiState.coverUrl,
                     isPlaying = uiState.isPlaying,
                     isSessionActive = uiState.isSessionActive,
-                    turntableSkin = TurntableSkin.DARK,
+                    turntableSkin = uiState.selectedSkin,
                     modifier = Modifier.weight(1f).fillMaxWidth()
                 )
 

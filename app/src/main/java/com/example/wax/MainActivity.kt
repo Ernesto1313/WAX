@@ -20,19 +20,27 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import com.example.wax.core.auth.SpotifyAuthManager
 import com.example.wax.core.media.MediaPlaybackService
+import com.example.wax.core.preferences.UserPreferencesRepository
+import com.example.wax.core.worker.WeeklyAlbumWorker
 import com.example.wax.presentation.WaxNavGraph
 import com.example.wax.presentation.main.AuthEvent
 import com.example.wax.presentation.main.MainViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import java.util.Calendar
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
     @Inject lateinit var spotifyAuthManager: SpotifyAuthManager
+    @Inject lateinit var userPreferencesRepository: UserPreferencesRepository
 
     private val viewModel: MainViewModel by viewModels()
 
@@ -41,9 +49,7 @@ class MainActivity : ComponentActivity() {
     private var overlayPermissionPrompted = false
 
     private val requestNotificationPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-            // Granted or denied — WorkManager will post silently when ready
-        }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* no-op */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // installSplashScreen must be called before super.onCreate so the splash theme
@@ -57,6 +63,7 @@ class MainActivity : ComponentActivity() {
         requestPostNotificationsIfNeeded()
         observeAuthEvents()
         maybeStartMediaPlaybackService()
+        maybeScheduleWeeklyNotification()
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(background = Color(0xFF0D0D0D))) {
@@ -114,6 +121,38 @@ class MainActivity : ComponentActivity() {
     private fun maybeStartMediaPlaybackService() {
         if (NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)) {
             startService(Intent(this, MediaPlaybackService::class.java))
+        }
+    }
+
+    /**
+     * Schedules the weekly album notification if the user has it enabled.
+     * Uses KEEP so an existing schedule is never disrupted on subsequent app launches.
+     * If the user disabled the toggle, the work was already cancelled and we skip re-scheduling.
+     */
+    private fun maybeScheduleWeeklyNotification() {
+        lifecycleScope.launch {
+            if (!userPreferencesRepository.isWeeklyNotifEnabled()) return@launch
+
+            val now = Calendar.getInstance()
+            val target = Calendar.getInstance().apply {
+                set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY)
+                set(Calendar.HOUR_OF_DAY, 9)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+                if (!after(now)) add(Calendar.WEEK_OF_YEAR, 1)
+            }
+            val delayMs = target.timeInMillis - now.timeInMillis
+
+            val request = PeriodicWorkRequestBuilder<WeeklyAlbumWorker>(7, TimeUnit.DAYS)
+                .setInitialDelay(delayMs, TimeUnit.MILLISECONDS)
+                .build()
+
+            WorkManager.getInstance(this@MainActivity).enqueueUniquePeriodicWork(
+                "weekly_album_notification",
+                ExistingPeriodicWorkPolicy.KEEP,
+                request
+            )
         }
     }
 
