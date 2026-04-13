@@ -51,6 +51,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -370,159 +372,114 @@ private fun LockControls(
     onNext: () -> Unit,
     onPrevious: () -> Unit
 ) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(18.dp)
+    Row(
+        verticalAlignment     = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(36.dp)
     ) {
-        Row(
-            verticalAlignment     = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(36.dp)
-        ) {
-            TonearmButton(isNext = false, onClick = onPrevious)
-            PlayLever(isPlaying = isPlaying, onClick = onPlayPause)
-            TonearmButton(isNext = true, onClick = onNext)
-        }
-        RotaryKnob()
-    }
-}
-
-/**
- * A physical lever/toggle — a rounded-rectangle pill that tilts left when
- * playing and right when paused, animating smoothly between states.
- */
-@Composable
-private fun PlayLever(isPlaying: Boolean, onClick: () -> Unit) {
-    val rotation by animateFloatAsState(
-        targetValue    = if (isPlaying) -15f else 15f,
-        animationSpec  = tween(300),
-        label          = "lever_rotation"
-    )
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier
-            .width(22.dp)
-            .height(60.dp)
-            .rotate(rotation)
-            .background(
-                brush = Brush.verticalGradient(
-                    listOf(Color(0xFFE0E0E0), Color(0xFF787878))
-                ),
-                shape = RoundedCornerShape(11.dp)
-            )
-            .clickable(onClick = onClick)
-    ) {
-        // Center groove — a subtle indicator mark on the lever face
-        Canvas(modifier = Modifier.fillMaxSize()) {
+        // Previous — left-pointing triangle
+        TurntableDiscButton(modifier = Modifier.size(44.dp), onClick = onPrevious) {
+            val s  = size.minDimension * 0.28f
             val cx = size.width / 2f
-            drawLine(
-                color       = Color(0xFF505050),
-                start       = Offset(cx, size.height * 0.36f),
-                end         = Offset(cx, size.height * 0.64f),
-                strokeWidth = 1.5.dp.toPx(),
-                cap         = StrokeCap.Round
-            )
+            val cy = size.height / 2f
+            val path = Path().apply {
+                moveTo(cx + s * 0.55f, cy - s * 0.65f)
+                lineTo(cx - s * 0.55f, cy)
+                lineTo(cx + s * 0.55f, cy + s * 0.65f)
+                close()
+            }
+            drawPath(path, Color.White.copy(alpha = 0.85f))
+        }
+
+        // Play / Pause — slightly larger disc
+        TurntableDiscButton(modifier = Modifier.size(56.dp), onClick = onPlayPause) {
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            if (isPlaying) {
+                val barW = size.minDimension * 0.10f
+                val barH = size.minDimension * 0.36f
+                val gap  = size.minDimension * 0.08f
+                drawRect(Color.White.copy(alpha = 0.85f), Offset(cx - gap - barW, cy - barH / 2f), Size(barW, barH))
+                drawRect(Color.White.copy(alpha = 0.85f), Offset(cx + gap, cy - barH / 2f), Size(barW, barH))
+            } else {
+                val s = size.minDimension * 0.28f
+                val path = Path().apply {
+                    moveTo(cx - s * 0.45f, cy - s * 0.65f)
+                    lineTo(cx + s * 0.65f, cy)
+                    lineTo(cx - s * 0.45f, cy + s * 0.65f)
+                    close()
+                }
+                drawPath(path, Color.White.copy(alpha = 0.85f))
+            }
+        }
+
+        // Next — right-pointing triangle
+        TurntableDiscButton(modifier = Modifier.size(44.dp), onClick = onNext) {
+            val s  = size.minDimension * 0.28f
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            val path = Path().apply {
+                moveTo(cx - s * 0.55f, cy - s * 0.65f)
+                lineTo(cx + s * 0.55f, cy)
+                lineTo(cx - s * 0.55f, cy + s * 0.65f)
+                close()
+            }
+            drawPath(path, Color.White.copy(alpha = 0.85f))
         }
     }
 }
 
 /**
- * Tonearm-inspired button drawn on Canvas.
- * A pivot knob at the top feeds a diagonal arm down to a stylus-head dot.
- * A small chevron near the arm midpoint indicates playback direction.
+ * Physical turntable-style button drawn with Canvas.
+ * Concentric circles create a tactile raised-disc look:
+ * outer ring slightly lighter than background, inner face darker (pressed inward),
+ * thin white border, and a shadow arc at the bottom for depth.
  */
 @Composable
-private fun TonearmButton(isNext: Boolean, onClick: () -> Unit) {
-    val silver = Color(0xFFBBBBBB)
-    Canvas(
-        modifier = Modifier
-            .size(52.dp)
-            .clickable(onClick = onClick)
-    ) {
-        val w = size.width
-        val h = size.height
-
-        // Pivot at top-center
-        val pivot = Offset(w * 0.50f, h * 0.18f)
-        // Stylus tip angled toward the playback direction
-        val tipX = if (isNext) w * 0.80f else w * 0.20f
-        val tip  = Offset(tipX, h * 0.80f)
-
-        // Arm
-        drawLine(silver, pivot, tip, 2.5.dp.toPx(), cap = StrokeCap.Round)
-
-        // Pivot knob
-        drawCircle(silver, 5.dp.toPx(), pivot)
-        drawCircle(Color(0xFF1A1A1A), 3.dp.toPx(), pivot)
-
-        // Stylus head
-        drawCircle(Color(0xFFEEEEEE), 5.dp.toPx(), tip)
-        drawCircle(Color(0xFF444444), 2.5.dp.toPx(), tip)
-
-        // Direction chevron near arm midpoint
-        val midX = (pivot.x + tip.x) / 2f
-        val midY = (pivot.y + tip.y) / 2f
-        val cv   = 5.dp.toPx()
-        val dir  = if (isNext) 1f else -1f
-        drawLine(silver, Offset(midX - cv * dir, midY - cv * 0.5f), Offset(midX, midY), 1.5.dp.toPx(), cap = StrokeCap.Round)
-        drawLine(silver, Offset(midX - cv * dir, midY + cv * 0.5f), Offset(midX, midY), 1.5.dp.toPx(), cap = StrokeCap.Round)
-    }
-}
-
-/**
- * Decorative rotary volume knob drawn on Canvas.
- * Static — volume is adjusted via hardware buttons.
- * The indicator line is fixed at the mid-level position (pointing down).
- */
-@Composable
-private fun RotaryKnob(modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier.size(40.dp)) {
+private fun TurntableDiscButton(
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+    drawIcon: DrawScope.() -> Unit
+) {
+    Canvas(modifier = modifier.clickable(onClick = onClick)) {
         val r      = size.minDimension / 2f
-        val center = Offset(r, r)
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val innerR = r * 0.72f
 
-        // Travel arc (135° → 405° = 270° sweep)
+        // Outer disc — slightly lighter than background, raised-button feel
+        drawCircle(color = Color(0xFF1C1C28), radius = r, center = center)
+
+        // Shadow arc at bottom — darker crescent suggests depth
         drawArc(
-            color      = Color.White.copy(alpha = 0.13f),
-            startAngle = 135f,
-            sweepAngle = 270f,
+            color      = Color.Black.copy(alpha = 0.55f),
+            startAngle = 40f,
+            sweepAngle = 100f,
             useCenter  = false,
             topLeft    = Offset(center.x - r, center.y - r),
             size       = Size(r * 2f, r * 2f),
-            style      = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+            style      = Stroke(width = r * 0.20f, cap = StrokeCap.Round)
         )
 
-        // Knob body
+        // Inner disc — darker, the button face pressed slightly inward
         drawCircle(
-            brush = Brush.radialGradient(
-                listOf(Color(0xFF3A3A3A), Color(0xFF181818)),
-                center, r * 0.70f
+            brush  = Brush.radialGradient(
+                listOf(Color(0xFF18181E), Color(0xFF0D0D12)),
+                center = center,
+                radius = innerR
             ),
-            radius = r * 0.70f,
+            radius = innerR,
             center = center
         )
+
+        // Thin white border ring
         drawCircle(
-            color  = Color(0xFF484848),
-            radius = r * 0.70f,
+            color  = Color.White.copy(alpha = 0.20f),
+            radius = r - 0.5.dp.toPx(),
             center = center,
-            style  = Stroke(1.dp.toPx())
+            style  = Stroke(width = 1.dp.toPx())
         )
 
-        // Position indicator — mid-level = 135° + 135° = 270° (pointing straight down)
-        val indicatorRad = Math.toRadians(270.0)
-        val innerR = r * 0.32f
-        val outerR = r * 0.64f
-        drawLine(
-            color       = Color.White.copy(alpha = 0.75f),
-            start       = Offset(
-                center.x + (innerR * cos(indicatorRad)).toFloat(),
-                center.y + (innerR * sin(indicatorRad)).toFloat()
-            ),
-            end         = Offset(
-                center.x + (outerR * cos(indicatorRad)).toFloat(),
-                center.y + (outerR * sin(indicatorRad)).toFloat()
-            ),
-            strokeWidth = 2.dp.toPx(),
-            cap         = StrokeCap.Round
-        )
+        // Draw the icon (triangle or pause bars)
+        drawIcon()
     }
 }
 

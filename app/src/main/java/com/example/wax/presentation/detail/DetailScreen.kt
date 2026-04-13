@@ -38,7 +38,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -181,24 +180,6 @@ fun DetailScreen(
                     track = track,
                     isCurrentlyPlaying = uiState.isPlaying && track.id == uiState.currentTrackId
                 )
-            }
-
-            // ── Lyrics header ────────────────────────────────────────────────
-            item {
-                Spacer(Modifier.height(8.dp))
-                SectionHeader("Lyrics")
-            }
-
-            // ── Lyrics section ───────────────────────────────────────────────
-            item {
-                val firstTrack = album.tracks.firstOrNull()
-                if (firstTrack != null) {
-                    LyricsSection(
-                        track       = firstTrack,
-                        albumArtist = album.artistNames.firstOrNull() ?: "",
-                        context     = context
-                    )
-                }
             }
 
             // ── About header ─────────────────────────────────────────────────
@@ -458,52 +439,6 @@ private fun LabeledValue(label: String, value: String) {
         Text(text = label, color = TextSecondary, fontSize = 12.sp)
         Spacer(Modifier.height(2.dp))
         Text(text = value, color = Color.White, fontSize = 15.sp)
-    }
-}
-
-// ── Lyrics section ─────────────────────────────────────────────────────────────
-
-@Composable
-private fun LyricsSection(
-    track: Track,
-    albumArtist: String,
-    context: android.content.Context
-) {
-    val artist = track.artistNames.firstOrNull()?.ifEmpty { albumArtist } ?: albumArtist
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 8.dp)
-    ) {
-        Text(
-            text = "\"${track.name}\"",
-            color = Color.White,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = "First track on this album",
-            color = TextSecondary,
-            fontSize = 12.sp
-        )
-        Spacer(Modifier.height(8.dp))
-        TextButton(
-            onClick = {
-                context.startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse(lyricsSearchUrl(track.name, artist)))
-                )
-            },
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp)
-        ) {
-            Text(
-                text = "Search lyrics on Google →",
-                color = SpotifyGreen,
-                fontSize = 14.sp
-            )
-        }
     }
 }
 
