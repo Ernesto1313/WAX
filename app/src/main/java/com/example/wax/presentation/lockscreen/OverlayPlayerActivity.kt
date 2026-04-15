@@ -15,8 +15,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -30,8 +32,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -46,13 +53,10 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -60,6 +64,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -77,8 +82,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import kotlin.math.cos
-import kotlin.math.sin
+
 import javax.inject.Inject
 
 private val LockBg    = Color(0xFF080810)
@@ -363,7 +367,52 @@ private fun LockVinyl(
     }
 }
 
-// ── Analog playback controls ───────────────────────────────────────────────────
+// ── Skeuomorphic 3D button ─────────────────────────────────────────────────────
+
+@Composable
+private fun SkeuomorphicButton(
+    onClick: () -> Unit,
+    size: Dp = 56.dp,
+    content: @Composable () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (isPressed) 0.96f else 1f, label = "skeu_scale")
+
+    Box(
+        modifier = Modifier
+            .size(size)
+            .scale(scale)
+            .clickable(interactionSource, null) { onClick() }
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val r = 12.dp.toPx()
+            // dark shadow bottom-right
+            drawRoundRect(
+                color        = Color.Black.copy(if (isPressed) 0.2f else 0.6f),
+                topLeft      = Offset(3.dp.toPx(), 3.dp.toPx()),
+                size         = this.size,
+                cornerRadius = CornerRadius(r),
+            )
+            // light shadow top-left
+            drawRoundRect(
+                color        = Color.White.copy(if (isPressed) 0.15f else 0.25f),
+                topLeft      = Offset((-3).dp.toPx(), (-3).dp.toPx()),
+                size         = this.size,
+                cornerRadius = CornerRadius(r),
+            )
+            // button face
+            drawRoundRect(
+                color        = Color(if (isPressed) 0xFF0d0d14 else 0xFF111118),
+                size         = this.size,
+                cornerRadius = CornerRadius(r),
+            )
+        }
+        Box(Modifier.align(Alignment.Center)) { content() }
+    }
+}
+
+// ── Playback controls ──────────────────────────────────────────────────────────
 
 @Composable
 private fun LockControls(
@@ -376,178 +425,62 @@ private fun LockControls(
         verticalAlignment     = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(28.dp)
     ) {
-        // Previous — left-pointing triangle, 52dp
-        TurntableButton(
-            modifier = Modifier.size(52.dp),
-            label    = "PREV",
-            onClick  = onPrevious
-        ) {
-            val s  = size.minDimension * 0.22f
-            val cx = size.width / 2f
-            val cy = size.height / 2f
-            val path = Path().apply {
-                moveTo(cx + s * 0.55f, cy - s * 0.65f)
-                lineTo(cx - s * 0.55f, cy)
-                lineTo(cx + s * 0.55f, cy + s * 0.65f)
-                close()
+        // Previous
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            SkeuomorphicButton(onClick = onPrevious, size = 56.dp) {
+                Icon(
+                    imageVector        = Icons.Rounded.SkipPrevious,
+                    contentDescription = "Previous",
+                    tint               = Color.White.copy(alpha = 0.85f),
+                    modifier           = Modifier.size(24.dp)
+                )
             }
-            drawPath(path, Color.White)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text          = "PREV",
+                color         = Color.White.copy(alpha = 0.4f),
+                fontSize      = 9.sp,
+                letterSpacing = 1.sp
+            )
         }
 
-        // Play / Pause — 64dp (more prominent)
-        TurntableButton(
-            modifier = Modifier.size(64.dp),
-            label    = if (isPlaying) "PAUSE" else "PLAY",
-            onClick  = onPlayPause
-        ) {
-            val cx = size.width / 2f
-            val cy = size.height / 2f
-            if (isPlaying) {
-                val barW = size.minDimension * 0.09f
-                val barH = size.minDimension * 0.38f
-                val gap  = size.minDimension * 0.07f
-                drawRect(Color.White, Offset(cx - gap - barW, cy - barH / 2f), Size(barW, barH))
-                drawRect(Color.White, Offset(cx + gap,        cy - barH / 2f), Size(barW, barH))
-            } else {
-                val s = size.minDimension * 0.22f
-                val path = Path().apply {
-                    moveTo(cx - s * 0.45f, cy - s * 0.65f)
-                    lineTo(cx + s * 0.65f, cy)
-                    lineTo(cx - s * 0.45f, cy + s * 0.65f)
-                    close()
-                }
-                drawPath(path, Color.White)
+        // Play / Pause
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            SkeuomorphicButton(onClick = onPlayPause, size = 68.dp) {
+                Icon(
+                    imageVector        = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    tint               = Color.White.copy(alpha = 0.85f),
+                    modifier           = Modifier.size(28.dp)
+                )
             }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text          = if (isPlaying) "PAUSE" else "PLAY",
+                color         = Color.White.copy(alpha = 0.4f),
+                fontSize      = 9.sp,
+                letterSpacing = 1.sp
+            )
         }
 
-        // Next — right-pointing triangle, 52dp
-        TurntableButton(
-            modifier = Modifier.size(52.dp),
-            label    = "NEXT",
-            onClick  = onNext
-        ) {
-            val s  = size.minDimension * 0.22f
-            val cx = size.width / 2f
-            val cy = size.height / 2f
-            val path = Path().apply {
-                moveTo(cx - s * 0.55f, cy - s * 0.65f)
-                lineTo(cx + s * 0.55f, cy)
-                lineTo(cx - s * 0.55f, cy + s * 0.65f)
-                close()
+        // Next
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            SkeuomorphicButton(onClick = onNext, size = 56.dp) {
+                Icon(
+                    imageVector        = Icons.Rounded.SkipNext,
+                    contentDescription = "Next",
+                    tint               = Color.White.copy(alpha = 0.85f),
+                    modifier           = Modifier.size(24.dp)
+                )
             }
-            drawPath(path, Color.White)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text          = "NEXT",
+                color         = Color.White.copy(alpha = 0.4f),
+                fontSize      = 9.sp,
+                letterSpacing = 1.sp
+            )
         }
-    }
-}
-
-/**
- * 3D physical turntable button drawn with Canvas.
- *
- * Outer ring: dark grey base with a top-left highlight arc and bottom-right shadow arc
- * to simulate a raised surface. Inner face: slightly darker disc with inverted arcs
- * for a concave/pressed-inward look. Icon centred at ~40 % of button diameter.
- *
- * Press interaction: scales down to 0.94 via animateFloatAsState and darkens the
- * inner face to give tactile feedback.
- */
-@Composable
-private fun TurntableButton(
-    modifier: Modifier = Modifier,
-    label: String,
-    onClick: () -> Unit,
-    drawIcon: DrawScope.() -> Unit
-) {
-    var pressed by remember { mutableStateOf(false) }
-    val scale   by animateFloatAsState(
-        targetValue = if (pressed) 0.94f else 1f,
-        label       = "btn_scale"
-    )
-
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Canvas(
-            modifier = modifier
-                .scale(scale)
-                .pointerInput(onClick) {
-                    detectTapGestures(
-                        onPress = {
-                            pressed = true
-                            tryAwaitRelease()
-                            pressed = false
-                        },
-                        onTap = { onClick() }
-                    )
-                }
-        ) {
-            val r      = size.minDimension / 2f
-            val center = Offset(size.width / 2f, size.height / 2f)
-            val innerR = r * 0.74f
-
-            // ── Outer ring base ──────────────────────────────────────────────
-            drawCircle(color = Color(0xFF2A2A2A), radius = r, center = center)
-
-            val outerStroke = r * 0.16f
-
-            // Highlight arc — top-left, white 0.3 alpha, ~120 degrees
-            drawArc(
-                color      = Color.White.copy(alpha = 0.30f),
-                startAngle = 165f,
-                sweepAngle = 120f,
-                useCenter  = false,
-                topLeft    = Offset(center.x - r + outerStroke / 2f, center.y - r + outerStroke / 2f),
-                size       = Size(r * 2f - outerStroke, r * 2f - outerStroke),
-                style      = Stroke(width = outerStroke, cap = StrokeCap.Round)
-            )
-
-            // Shadow arc — bottom-right, black 0.5 alpha, ~120 degrees
-            drawArc(
-                color      = Color.Black.copy(alpha = 0.50f),
-                startAngle = 345f,
-                sweepAngle = 120f,
-                useCenter  = false,
-                topLeft    = Offset(center.x - r + outerStroke / 2f, center.y - r + outerStroke / 2f),
-                size       = Size(r * 2f - outerStroke, r * 2f - outerStroke),
-                style      = Stroke(width = outerStroke, cap = StrokeCap.Round)
-            )
-
-            // ── Inner face ───────────────────────────────────────────────────
-            val innerColor = if (pressed) Color(0xFF111111) else Color(0xFF1A1A1A)
-            drawCircle(color = innerColor, radius = innerR, center = center)
-
-            val innerStroke = innerR * 0.18f
-
-            // Inner highlight arc — inverted position (bottom-right), white 0.15 alpha
-            drawArc(
-                color      = Color.White.copy(alpha = 0.15f),
-                startAngle = 345f,
-                sweepAngle = 120f,
-                useCenter  = false,
-                topLeft    = Offset(center.x - innerR + innerStroke / 2f, center.y - innerR + innerStroke / 2f),
-                size       = Size(innerR * 2f - innerStroke, innerR * 2f - innerStroke),
-                style      = Stroke(width = innerStroke, cap = StrokeCap.Round)
-            )
-
-            // Inner shadow arc — inverted position (top-left), black 0.4 alpha
-            drawArc(
-                color      = Color.Black.copy(alpha = 0.40f),
-                startAngle = 165f,
-                sweepAngle = 120f,
-                useCenter  = false,
-                topLeft    = Offset(center.x - innerR + innerStroke / 2f, center.y - innerR + innerStroke / 2f),
-                size       = Size(innerR * 2f - innerStroke, innerR * 2f - innerStroke),
-                style      = Stroke(width = innerStroke, cap = StrokeCap.Round)
-            )
-
-            // ── Icon (~40 % of button diameter, white) ───────────────────────
-            drawIcon()
-        }
-
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text          = label,
-            color         = Color.White.copy(alpha = 0.50f),
-            fontSize      = 10.sp,
-            letterSpacing = 1.sp
-        )
     }
 }
 
