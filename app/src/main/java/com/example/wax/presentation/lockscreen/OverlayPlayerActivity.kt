@@ -15,7 +15,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,7 +32,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -46,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -374,11 +374,15 @@ private fun LockControls(
 ) {
     Row(
         verticalAlignment     = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(36.dp)
+        horizontalArrangement = Arrangement.spacedBy(28.dp)
     ) {
-        // Previous — left-pointing triangle
-        TurntableDiscButton(modifier = Modifier.size(44.dp), onClick = onPrevious) {
-            val s  = size.minDimension * 0.28f
+        // Previous — left-pointing triangle, 52dp
+        TurntableButton(
+            modifier = Modifier.size(52.dp),
+            label    = "PREV",
+            onClick  = onPrevious
+        ) {
+            val s  = size.minDimension * 0.22f
             val cx = size.width / 2f
             val cy = size.height / 2f
             val path = Path().apply {
@@ -387,34 +391,42 @@ private fun LockControls(
                 lineTo(cx + s * 0.55f, cy + s * 0.65f)
                 close()
             }
-            drawPath(path, Color.White.copy(alpha = 0.85f))
+            drawPath(path, Color.White)
         }
 
-        // Play / Pause — slightly larger disc
-        TurntableDiscButton(modifier = Modifier.size(56.dp), onClick = onPlayPause) {
+        // Play / Pause — 64dp (more prominent)
+        TurntableButton(
+            modifier = Modifier.size(64.dp),
+            label    = if (isPlaying) "PAUSE" else "PLAY",
+            onClick  = onPlayPause
+        ) {
             val cx = size.width / 2f
             val cy = size.height / 2f
             if (isPlaying) {
-                val barW = size.minDimension * 0.10f
-                val barH = size.minDimension * 0.36f
-                val gap  = size.minDimension * 0.08f
-                drawRect(Color.White.copy(alpha = 0.85f), Offset(cx - gap - barW, cy - barH / 2f), Size(barW, barH))
-                drawRect(Color.White.copy(alpha = 0.85f), Offset(cx + gap, cy - barH / 2f), Size(barW, barH))
+                val barW = size.minDimension * 0.09f
+                val barH = size.minDimension * 0.38f
+                val gap  = size.minDimension * 0.07f
+                drawRect(Color.White, Offset(cx - gap - barW, cy - barH / 2f), Size(barW, barH))
+                drawRect(Color.White, Offset(cx + gap,        cy - barH / 2f), Size(barW, barH))
             } else {
-                val s = size.minDimension * 0.28f
+                val s = size.minDimension * 0.22f
                 val path = Path().apply {
                     moveTo(cx - s * 0.45f, cy - s * 0.65f)
                     lineTo(cx + s * 0.65f, cy)
                     lineTo(cx - s * 0.45f, cy + s * 0.65f)
                     close()
                 }
-                drawPath(path, Color.White.copy(alpha = 0.85f))
+                drawPath(path, Color.White)
             }
         }
 
-        // Next — right-pointing triangle
-        TurntableDiscButton(modifier = Modifier.size(44.dp), onClick = onNext) {
-            val s  = size.minDimension * 0.28f
+        // Next — right-pointing triangle, 52dp
+        TurntableButton(
+            modifier = Modifier.size(52.dp),
+            label    = "NEXT",
+            onClick  = onNext
+        ) {
+            val s  = size.minDimension * 0.22f
             val cx = size.width / 2f
             val cy = size.height / 2f
             val path = Path().apply {
@@ -423,63 +435,119 @@ private fun LockControls(
                 lineTo(cx - s * 0.55f, cy + s * 0.65f)
                 close()
             }
-            drawPath(path, Color.White.copy(alpha = 0.85f))
+            drawPath(path, Color.White)
         }
     }
 }
 
 /**
- * Physical turntable-style button drawn with Canvas.
- * Concentric circles create a tactile raised-disc look:
- * outer ring slightly lighter than background, inner face darker (pressed inward),
- * thin white border, and a shadow arc at the bottom for depth.
+ * 3D physical turntable button drawn with Canvas.
+ *
+ * Outer ring: dark grey base with a top-left highlight arc and bottom-right shadow arc
+ * to simulate a raised surface. Inner face: slightly darker disc with inverted arcs
+ * for a concave/pressed-inward look. Icon centred at ~40 % of button diameter.
+ *
+ * Press interaction: scales down to 0.94 via animateFloatAsState and darkens the
+ * inner face to give tactile feedback.
  */
 @Composable
-private fun TurntableDiscButton(
+private fun TurntableButton(
     modifier: Modifier = Modifier,
+    label: String,
     onClick: () -> Unit,
     drawIcon: DrawScope.() -> Unit
 ) {
-    Canvas(modifier = modifier.clickable(onClick = onClick)) {
-        val r      = size.minDimension / 2f
-        val center = Offset(size.width / 2f, size.height / 2f)
-        val innerR = r * 0.72f
+    var pressed by remember { mutableStateOf(false) }
+    val scale   by animateFloatAsState(
+        targetValue = if (pressed) 0.94f else 1f,
+        label       = "btn_scale"
+    )
 
-        // Outer disc — slightly lighter than background, raised-button feel
-        drawCircle(color = Color(0xFF1C1C28), radius = r, center = center)
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Canvas(
+            modifier = modifier
+                .scale(scale)
+                .pointerInput(onClick) {
+                    detectTapGestures(
+                        onPress = {
+                            pressed = true
+                            tryAwaitRelease()
+                            pressed = false
+                        },
+                        onTap = { onClick() }
+                    )
+                }
+        ) {
+            val r      = size.minDimension / 2f
+            val center = Offset(size.width / 2f, size.height / 2f)
+            val innerR = r * 0.74f
 
-        // Shadow arc at bottom — darker crescent suggests depth
-        drawArc(
-            color      = Color.Black.copy(alpha = 0.55f),
-            startAngle = 40f,
-            sweepAngle = 100f,
-            useCenter  = false,
-            topLeft    = Offset(center.x - r, center.y - r),
-            size       = Size(r * 2f, r * 2f),
-            style      = Stroke(width = r * 0.20f, cap = StrokeCap.Round)
+            // ── Outer ring base ──────────────────────────────────────────────
+            drawCircle(color = Color(0xFF2A2A2A), radius = r, center = center)
+
+            val outerStroke = r * 0.16f
+
+            // Highlight arc — top-left, white 0.3 alpha, ~120 degrees
+            drawArc(
+                color      = Color.White.copy(alpha = 0.30f),
+                startAngle = 165f,
+                sweepAngle = 120f,
+                useCenter  = false,
+                topLeft    = Offset(center.x - r + outerStroke / 2f, center.y - r + outerStroke / 2f),
+                size       = Size(r * 2f - outerStroke, r * 2f - outerStroke),
+                style      = Stroke(width = outerStroke, cap = StrokeCap.Round)
+            )
+
+            // Shadow arc — bottom-right, black 0.5 alpha, ~120 degrees
+            drawArc(
+                color      = Color.Black.copy(alpha = 0.50f),
+                startAngle = 345f,
+                sweepAngle = 120f,
+                useCenter  = false,
+                topLeft    = Offset(center.x - r + outerStroke / 2f, center.y - r + outerStroke / 2f),
+                size       = Size(r * 2f - outerStroke, r * 2f - outerStroke),
+                style      = Stroke(width = outerStroke, cap = StrokeCap.Round)
+            )
+
+            // ── Inner face ───────────────────────────────────────────────────
+            val innerColor = if (pressed) Color(0xFF111111) else Color(0xFF1A1A1A)
+            drawCircle(color = innerColor, radius = innerR, center = center)
+
+            val innerStroke = innerR * 0.18f
+
+            // Inner highlight arc — inverted position (bottom-right), white 0.15 alpha
+            drawArc(
+                color      = Color.White.copy(alpha = 0.15f),
+                startAngle = 345f,
+                sweepAngle = 120f,
+                useCenter  = false,
+                topLeft    = Offset(center.x - innerR + innerStroke / 2f, center.y - innerR + innerStroke / 2f),
+                size       = Size(innerR * 2f - innerStroke, innerR * 2f - innerStroke),
+                style      = Stroke(width = innerStroke, cap = StrokeCap.Round)
+            )
+
+            // Inner shadow arc — inverted position (top-left), black 0.4 alpha
+            drawArc(
+                color      = Color.Black.copy(alpha = 0.40f),
+                startAngle = 165f,
+                sweepAngle = 120f,
+                useCenter  = false,
+                topLeft    = Offset(center.x - innerR + innerStroke / 2f, center.y - innerR + innerStroke / 2f),
+                size       = Size(innerR * 2f - innerStroke, innerR * 2f - innerStroke),
+                style      = Stroke(width = innerStroke, cap = StrokeCap.Round)
+            )
+
+            // ── Icon (~40 % of button diameter, white) ───────────────────────
+            drawIcon()
+        }
+
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text          = label,
+            color         = Color.White.copy(alpha = 0.50f),
+            fontSize      = 10.sp,
+            letterSpacing = 1.sp
         )
-
-        // Inner disc — darker, the button face pressed slightly inward
-        drawCircle(
-            brush  = Brush.radialGradient(
-                listOf(Color(0xFF18181E), Color(0xFF0D0D12)),
-                center = center,
-                radius = innerR
-            ),
-            radius = innerR,
-            center = center
-        )
-
-        // Thin white border ring
-        drawCircle(
-            color  = Color.White.copy(alpha = 0.20f),
-            radius = r - 0.5.dp.toPx(),
-            center = center,
-            style  = Stroke(width = 1.dp.toPx())
-        )
-
-        // Draw the icon (triangle or pause bars)
-        drawIcon()
     }
 }
 
