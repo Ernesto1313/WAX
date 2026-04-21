@@ -73,14 +73,47 @@ import com.example.wax.domain.model.TurntableSkin
 import com.example.wax.presentation.common.TurntableSection
 
 
+/** Spotify brand green; used for active/highlighted UI elements and the "Open in Spotify" button. */
 private val SpotifyGreen    = Color(0xFF1DB954)
+
+/** Near-black background that matches the physical vinyl aesthetic of the app. */
 private val BackgroundColor = Color(0xFF0D0D0D)
+
+/** Slightly lighter dark surface used as the bottom sheet background to lift it visually. */
 private val SheetColor      = Color(0xFF161616)
+
+/** Card/dialog surface color, one step lighter than [SheetColor]. */
 private val SurfaceColor    = Color(0xFF1A1A1A)
+
+/** Muted grey used for secondary labels (artist, year, track numbers, timestamps). */
 private val TextSecondary   = Color(0xFFAAAAAA)
 
 // ── Main screen ────────────────────────────────────────────────────────────────
 
+/**
+ * Root composable for the main turntable screen.
+ *
+ * Layout structure (top → bottom):
+ * - [TurntableSection] — takes all remaining vertical space via `weight(1f)` so the vinyl
+ *   platter scales gracefully across screen sizes without hard-coded heights.
+ * - [PlaybackControls] — previous / play-pause / next buttons delegating to [MainViewModel].
+ * - Album metadata block — title, artist, year; tapping navigates to the detail screen.
+ * - "Open in Spotify" button — deep links to the Spotify app, falling back to the web URL.
+ *
+ * [BottomSheetScaffold] hosts the [TrackListSheet]. `sheetPeekHeight = 28.dp` is intentionally
+ * small: it shows only the drag handle pill so users know the sheet is swipeable, without
+ * obscuring the playback controls or the turntable when collapsed.
+ *
+ * A [LifecycleEventEffect] re-checks the notification listener permission on every `ON_RESUME`
+ * so that the [NotificationPermissionDialog] dismisses automatically if the user grants access
+ * from the system Settings screen and then returns to the app.
+ *
+ * System-bar insets are intentionally suppressed (`contentWindowInsets = WindowInsets(0)`)
+ * because the outer NavGraph Scaffold already applies `innerPadding` to the NavHost container.
+ *
+ * @param onNavigateToDetail Callback invoked when the user taps the album metadata block.
+ * @param viewModel          Hilt-injected [MainViewModel]; defaults to the hiltViewModel() instance.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
@@ -90,7 +123,8 @@ fun MainScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    // Re-check notification listener status every time the screen resumes
+    // Re-check notification listener status every time the screen resumes so the dialog
+    // auto-dismisses if the user granted access from the system Settings and returned.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         viewModel.checkNotificationListenerStatus()
     }
@@ -115,6 +149,15 @@ fun MainScreen(
         val scaffoldState = rememberBottomSheetScaffoldState()
         val isSheetExpanded = scaffoldState.bottomSheetState.currentValue == SheetValue.Expanded
 
+        /**
+         * BottomSheetScaffold is used instead of a plain ModalBottomSheet because it keeps
+         * the sheet permanently anchored to the bottom of the screen (peekable), rather than
+         * overlaying the content as a modal. This allows the tracklist to coexist with the
+         * turntable rather than covering it entirely on open.
+         *
+         * sheetPeekHeight = 28.dp shows only the drag handle pill — just enough to signal
+         * the sheet's presence without stealing vertical space from the turntable or controls.
+         */
         BottomSheetScaffold(
             scaffoldState = scaffoldState,
             sheetContent = {
@@ -125,12 +168,14 @@ fun MainScreen(
                     isTracksLoading = uiState.isTracksLoading,
                     isExpanded = isSheetExpanded,
                     onTrackClick = { track ->
+                        // Update the highlighted row immediately, then open Spotify
                         viewModel.onTrackSelected(track.id)
                         val trackUri = Uri.parse("spotify:track:${track.id}")
                         val intent = Intent(Intent.ACTION_VIEW, trackUri)
                         if (intent.resolveActivity(context.packageManager) != null) {
                             context.startActivity(intent)
                         } else {
+                            // Spotify app not installed — fall back to the web player
                             context.startActivity(
                                 Intent(Intent.ACTION_VIEW,
                                     Uri.parse("https://open.spotify.com/track/${track.id}"))
@@ -157,6 +202,23 @@ fun MainScreen(
                     .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                /**
+                 * weight(1f) makes TurntableSection consume all vertical space not claimed by
+                 * siblings (controls, metadata, button). This lets the vinyl platter scale to
+                 * any screen height without hard-coded dp values, preserving proportions on both
+                 * compact and large displays.
+                 *
+                 * Internally, TurntableSection uses an Animatable<Float> for vinyl rotation.
+                 * The rotation value is never reset to 0 when playback pauses — the animation
+                 * simply stops at its current angle. Resetting to 0 would cause a visible
+                 * snap-back jump; retaining the angle makes resume feel natural and physical.
+                 *
+                 * TurntableSection draws two Canvas layers:
+                 *  - VinylCanvas: concentric circles for the record body, groove rings,
+                 *    a highlight arc to simulate light reflection, and a centre label disc.
+                 *  - TonearmCanvas: a pivot circle and a straight arm line rotated to rest
+                 *    position (lifted) or playing position (lowered onto the groove).
+                 */
                 TurntableSection(
                     coverUrl = uiState.coverUrl,
                     isPlaying = uiState.isPlaying,
@@ -248,6 +310,16 @@ fun MainScreen(
 
 // ── Album source badge ─────────────────────────────────────────────────────────
 
+/**
+ * Small pill-shaped label that indicates whether the displayed album comes from a live
+ * Spotify session ("● Now Playing") or from the weekly curation algorithm ("Weekly Pick").
+ *
+ * The dot prefix and [SpotifyGreen] color make the live state visually distinct and convey
+ * activity without needing an icon or animation.
+ *
+ * @param isNowPlaying True when [MainUiState.isNowPlaying] is set, indicating the album
+ *                     was loaded from an active Spotify media session rather than the curator.
+ */
 @Composable
 private fun AlbumSourceBadge(isNowPlaying: Boolean) {
     val label = if (isNowPlaying) "● Now Playing" else "Weekly Pick"
@@ -272,6 +344,17 @@ private fun AlbumSourceBadge(isNowPlaying: Boolean) {
 
 // ── Notification permission dialog ─────────────────────────────────────────────
 
+/**
+ * Modal dialog explaining why Wax needs the notification listener permission and offering
+ * three response options: grant access, dismiss for this session, or permanently dismiss.
+ *
+ * The dialog is shown when [MainUiState.showNotificationPrompt] is true, which happens when
+ * the permission has not been granted AND the user has not chosen "Don't ask again".
+ *
+ * @param onGrantAccess     Navigates to the system notification listener settings screen.
+ * @param onNotNow          Hides the dialog for this session; it will reappear on next launch.
+ * @param onDontAskAgain    Persistently dismisses the dialog by writing a DataStore flag.
+ */
 @Composable
 private fun NotificationPermissionDialog(
     onGrantAccess: () -> Unit,
@@ -323,6 +406,28 @@ private fun NotificationPermissionDialog(
 
 // ── Track list sheet ───────────────────────────────────────────────────────────
 
+/**
+ * Scrollable tracklist rendered inside the [BottomSheetScaffold]'s sheet content slot.
+ *
+ * Structure (top → bottom in the LazyColumn):
+ * 1. **Drag handle pill** — always visible regardless of sheet state; signals swipeability.
+ * 2. **Header** ("Tracklist" + count) — shown only when [isExpanded] is true to avoid
+ *    cluttering the collapsed peek state.
+ * 3. **Content** — either a [CircularProgressIndicator] while [isTracksLoading] with no
+ *    tracks yet, or the list of [SheetTrackRow] items keyed by track ID for stable diffing.
+ *
+ * Highlighting logic: a row is considered "currently playing" when BOTH conditions hold:
+ * - `track.id == currentTrackId` (matched by [MainViewModel]'s media session collector)
+ * - `isPlaying == true` (playback is not paused)
+ * This prevents the highlight from persisting while music is paused.
+ *
+ * @param tracks           The full ordered tracklist for the displayed album.
+ * @param currentTrackId   Spotify ID of the track currently playing; null when nothing is matched.
+ * @param isPlaying        Whether Spotify is actively playing (not paused).
+ * @param isTracksLoading  True while tracks are being fetched; shows a spinner if [tracks] is empty.
+ * @param isExpanded       True when the sheet is in the [SheetValue.Expanded] state.
+ * @param onTrackClick     Callback invoked when the user taps a track row.
+ */
 @Composable
 private fun TrackListSheet(
     tracks: List<Track>,
@@ -339,7 +444,7 @@ private fun TrackListSheet(
             .fillMaxWidth()
             .fillMaxHeight(0.75f)
     ) {
-        // Drag handle — always visible
+        // Drag handle — always visible so the user always knows the sheet is swipeable
         item {
             Box(
                 modifier = Modifier
@@ -356,7 +461,7 @@ private fun TrackListSheet(
             }
         }
 
-        // Header — only when expanded
+        // Header — only when expanded to avoid cluttering the collapsed peek state
         if (isExpanded) {
             item {
                 Row(
@@ -397,9 +502,11 @@ private fun TrackListSheet(
                 }
             }
         } else {
+            // key = track.id enables LazyColumn to efficiently diff and animate item changes
             items(tracks, key = { it.id }) { track ->
                 SheetTrackRow(
                     track = track,
+                    // Both conditions must hold: correct ID AND actively playing (not paused)
                     isCurrentlyPlaying = isPlaying && track.id == currentTrackId,
                     onClick = { onTrackClick(track) }
                 )
@@ -410,6 +517,21 @@ private fun TrackListSheet(
     }
 }
 
+/**
+ * A single row in [TrackListSheet] representing one track on the album.
+ *
+ * Highlighting: when [isCurrentlyPlaying] is true the row applies a subtle tinted background,
+ * renders the track name in [SpotifyGreen] with [FontWeight.SemiBold], and replaces the
+ * track-number label with an animated [SheetEqualizerBars] indicator. This gives immediate
+ * visual feedback without requiring a separate "now playing" screen.
+ *
+ * Featured artists (all artists after index 0) are displayed as a secondary line below the
+ * track name; the primary artist is omitted here because it is already shown in the album header.
+ *
+ * @param track              The domain [Track] to display.
+ * @param isCurrentlyPlaying True when this track is the active playing track.
+ * @param onClick            Callback invoked when the row is tapped.
+ */
 @Composable
 private fun SheetTrackRow(
     track: Track,
@@ -429,6 +551,8 @@ private fun SheetTrackRow(
     ) {
         Box(modifier = Modifier.width(28.dp), contentAlignment = Alignment.Center) {
             if (isCurrentlyPlaying) {
+                // Replace the static track number with animated equalizer bars to
+                // signal live playback activity at a glance.
                 SheetEqualizerBars()
             } else {
                 Text(
@@ -450,6 +574,7 @@ private fun SheetTrackRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            // Show featured artists (index > 0); the primary artist is in the album header
             val featured = track.artistNames.drop(1)
             if (featured.isNotEmpty()) {
                 Text(
@@ -468,6 +593,17 @@ private fun SheetTrackRow(
     }
 }
 
+/**
+ * Three animated vertical bars mimicking a classic audio equalizer indicator.
+ *
+ * Each bar oscillates independently between a min and max height fraction using
+ * [infiniteRepeatable] tweens with different durations (600 ms, 400 ms, 500 ms) so they
+ * never move in unison — this produces a natural, organic look rather than a mechanical pulse.
+ *
+ * Rendered at 14×14 dp so it fits inside the 28 dp track-number column without clipping.
+ *
+ * @param modifier Optional modifier applied to the root [Row].
+ */
 @Composable
 private fun SheetEqualizerBars(modifier: Modifier = Modifier) {
     val transition = rememberInfiniteTransition(label = "eq_sheet")
@@ -503,6 +639,12 @@ private fun SheetEqualizerBars(modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * Converts a track duration in milliseconds to a human-readable "m:ss" string.
+ *
+ * @param durationMs Track length in milliseconds as returned by the Spotify API.
+ * @return Formatted string, e.g. `"3:45"` or `"12:04"`.
+ */
 private fun formatDuration(durationMs: Int): String {
     val totalSec = durationMs / 1000
     val min = totalSec / 60
@@ -512,6 +654,22 @@ private fun formatDuration(durationMs: Int): String {
 
 // ── Playback controls ──────────────────────────────────────────────────────────
 
+/**
+ * Row of media transport controls (previous, play/pause, next).
+ *
+ * Each button delegates directly to the corresponding [MainViewModel] method via the lambda
+ * parameters — the composable itself holds no state. The play/pause icon swaps between
+ * [Icons.Rounded.Pause] and [Icons.Rounded.PlayArrow] based on [isPlaying], keeping the
+ * button in sync with the actual Spotify playback state from [MainUiState].
+ *
+ * The centre play/pause button is rendered at 44 dp (vs 32 dp for skip buttons) to create
+ * a natural visual hierarchy matching standard media player conventions.
+ *
+ * @param isPlaying   Whether Spotify is currently playing; controls the icon displayed.
+ * @param onPrevious  Invoked when the user taps the skip-previous button.
+ * @param onPlayPause Invoked when the user taps the play/pause button.
+ * @param onNext      Invoked when the user taps the skip-next button.
+ */
 @Composable
 private fun PlaybackControls(
     isPlaying: Boolean,
@@ -549,4 +707,3 @@ private fun PlaybackControls(
         }
     }
 }
-
