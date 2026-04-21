@@ -60,11 +60,50 @@ import com.example.wax.domain.model.Album
 import com.example.wax.domain.model.Track
 import com.example.wax.presentation.main.MainViewModel
 
+/** Spotify brand green; used for the artist name link and the "Open in Spotify" button. */
 private val SpotifyGreen = Color(0xFF1DB954)
+
+/** Near-black background consistent with the app's vinyl aesthetic. */
 private val BackgroundColor = Color(0xFF0D0D0D)
+
+/** Elevated surface color used for genre chips and dialog backgrounds. */
 private val SurfaceColor = Color(0xFF1A1A1A)
+
+/** Muted grey for secondary text: metadata labels, timestamps, featured artists. */
 private val TextSecondary = Color(0xFFAAAAAA)
 
+/**
+ * Full-screen detail view for the currently loaded album.
+ *
+ * **Screen states** (evaluated in order inside the Scaffold lambda):
+ * 1. **Loading** — [MainUiState.isLoading] is true: shows a centred [CircularProgressIndicator].
+ * 2. **No album** — [MainUiState.album] is null (load failed or cleared): shows the error
+ *    message and a "← Go back" link so the user is never stuck on a blank screen.
+ * 3. **Content** — album is available: renders the full [LazyColumn] layout.
+ *
+ * **Why [LazyColumn] instead of `Column + verticalScroll`**: LazyColumn composes and lays out
+ * only the items currently visible on screen. For an album with 15–20 tracks plus a large cover
+ * image, this avoids composing every [TrackRow] upfront. `Column + verticalScroll` would require
+ * the full height to be measured at once and all children to be composed eagerly, which is wasteful
+ * and can cause jank on lower-end devices. LazyColumn also supports stable `key` parameters so
+ * the framework can skip re-composing unchanged rows when [MainUiState.currentTrackId] changes.
+ *
+ * **LazyColumn structure** (items in order):
+ * 1. Top bar (back button)
+ * 2. Album cover image ([aspectRatio(1f)] square)
+ * 3. [AlbumInfoSection] — title, artist, metadata, "Open in Spotify" button
+ * 4. "Tracklist" section header
+ * 5. One [TrackRow] per track (via [itemsIndexed])
+ * 6. "About" section header
+ * 7. [AboutSection] — genre chips, label, track count, release date
+ * 8. Bottom spacer
+ *
+ * The screen shares [MainViewModel] with [MainScreen] so it reads the same [MainUiState]
+ * including [MainUiState.currentTrackId] for track highlight without duplicating state.
+ *
+ * @param onNavigateBack Callback invoked when the back button or the "← Go back" link is tapped.
+ * @param viewModel      Hilt-injected [MainViewModel]; shares state with the main turntable screen.
+ */
 @Composable
 fun DetailScreen(
     onNavigateBack: () -> Unit,
@@ -86,6 +125,7 @@ fun DetailScreen(
                 return@Scaffold
             }
             album == null -> {
+                // Album cleared or load failed — show error and an escape route
                 Box(
                     modifier = Modifier.fillMaxSize().padding(innerPadding),
                     contentAlignment = Alignment.Center
@@ -109,6 +149,12 @@ fun DetailScreen(
             }
         }
 
+        /**
+         * LazyColumn composes only the visible items at a time, avoiding the cost of laying
+         * out the entire screen (cover image + ~20 track rows + about section) upfront.
+         * contentPadding = innerPadding applies the Scaffold's system-bar insets to the
+         * list's scroll area so the first item is not obscured by the status bar.
+         */
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = innerPadding
@@ -132,6 +178,13 @@ fun DetailScreen(
             }
 
             // ── Album cover ──────────────────────────────────────────────────
+            /**
+             * The cover image is sized to the full available width via [fillMaxWidth] then
+             * constrained to a 1:1 square via [aspectRatio(1f)]. Most album artwork is square,
+             * and this constraint keeps the layout predictable regardless of the image's actual
+             * pixel dimensions. [ContentScale.Crop] fills the rounded rectangle completely,
+             * cropping any excess rather than letterboxing.
+             */
             item {
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
@@ -142,7 +195,7 @@ fun DetailScreen(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(1f)
+                        .aspectRatio(1f)           // enforce square regardless of artwork dimensions
                         .padding(horizontal = 24.dp)
                         .clip(RoundedCornerShape(12.dp))
                 )
@@ -161,6 +214,7 @@ fun DetailScreen(
                 if (intent.resolveActivity(context.packageManager) != null) {
                     context.startActivity(intent)
                 } else {
+                    // Spotify app not installed — fall back to the web player
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(spotifyWebUrl)))
                 }
             },
@@ -175,6 +229,8 @@ fun DetailScreen(
             item { SectionHeader("Tracklist") }
 
             // ── Tracks ───────────────────────────────────────────────────────
+            // itemsIndexed is used to have access to the index if needed in future;
+            // isCurrentlyPlaying requires BOTH the correct ID AND active playback.
             itemsIndexed(album.tracks) { _, track ->
                 TrackRow(
                     track = track,
@@ -198,6 +254,21 @@ fun DetailScreen(
 
 // ── Album info section ─────────────────────────────────────────────────────────
 
+/**
+ * Displays the album title, artist name, condensed metadata line, and the
+ * "Open in Spotify" deep-link button.
+ *
+ * The artist name is rendered in [SpotifyGreen] and is clickable; tapping it opens the
+ * first artist's Spotify profile URL (from [Album.artistSpotifyUrls]) via [Intent.ACTION_VIEW].
+ *
+ * The metadata line composes `year · label · totalTracks tracks · totalDuration` in a single
+ * [Text] to keep the layout compact. The label defaults to "—" when [Album.label] is empty
+ * (some Spotify releases omit the label field).
+ *
+ * @param album           The [Album] domain object to display.
+ * @param onOpenInSpotify Invoked when the "Open in Spotify" button is clicked.
+ * @param onOpenArtist    Invoked when the artist name text is clicked.
+ */
 @Composable
 private fun AlbumInfoSection(
     album: Album,
@@ -219,6 +290,7 @@ private fun AlbumInfoSection(
 
         Spacer(Modifier.height(6.dp))
 
+        // Artist name is a tappable link that opens the Spotify artist page
         Text(
             text = album.artistNames.joinToString(", "),
             color = SpotifyGreen,
@@ -230,7 +302,7 @@ private fun AlbumInfoSection(
 
         val year = album.releaseDate.take(4)
         val totalDuration = formatTotalDuration(album.tracks)
-        val labelText = album.label.ifEmpty { "—" }
+        val labelText = album.label.ifEmpty { "—" }  // Spotify omits label on some releases
         Text(
             text = "$year · $labelText · ${album.totalTracks} tracks · $totalDuration",
             color = TextSecondary,
@@ -267,6 +339,15 @@ private fun AlbumInfoSection(
 
 // ── Section header ─────────────────────────────────────────────────────────────
 
+/**
+ * Bold white section title followed by a subtle [HorizontalDivider].
+ *
+ * Used to separate "Tracklist" and "About" content blocks within the [LazyColumn].
+ * The divider at 8% white opacity matches the app-wide divider style without being
+ * visually dominant.
+ *
+ * @param title The section heading text to display.
+ */
 @Composable
 private fun SectionHeader(title: String) {
     Column(Modifier.fillMaxWidth()) {
@@ -286,6 +367,32 @@ private fun SectionHeader(title: String) {
 
 // ── Track row ──────────────────────────────────────────────────────────────────
 
+/**
+ * A single row in the tracklist representing one track on the album.
+ *
+ * **Highlight logic**: [isCurrentlyPlaying] is true only when BOTH the track's ID matches
+ * [MainUiState.currentTrackId] AND [MainUiState.isPlaying] is true. This prevents the
+ * highlight lingering while Spotify is paused on that track. When highlighted:
+ * - The row background gains a 4% white tint.
+ * - The track name turns [SpotifyGreen] and becomes [FontWeight.SemiBold].
+ * - The zero-padded track number is replaced by an animated [EqualizerBars] indicator.
+ *
+ * **Zero-padded track numbers**: `padStart(2, '0')` formats single-digit numbers as "01",
+ * "02", etc., so all track numbers occupy the same width and the column stays vertically
+ * aligned across the full tracklist.
+ *
+ * **Featured artists**: `track.artistNames.drop(1)` skips the primary (index 0) artist —
+ * already shown in [AlbumInfoSection] — and displays only collaborators as a secondary line.
+ * If the list has only one artist, `drop(1)` returns an empty list and nothing is rendered.
+ *
+ * **Lyrics link**: Tapping "View Lyrics" fires [Intent.ACTION_VIEW] with a Google search URL
+ * built by [lyricsSearchUrl]. Using a search URL rather than a lyrics-specific service keeps
+ * the implementation stable and doesn't require an additional API key. The browser or any
+ * installed app that handles HTTP links will open the result.
+ *
+ * @param track              The domain [Track] to display.
+ * @param isCurrentlyPlaying True when this track is the active playing track.
+ */
 @Composable
 private fun TrackRow(track: Track, isCurrentlyPlaying: Boolean) {
     val context   = LocalContext.current
@@ -299,11 +406,12 @@ private fun TrackRow(track: Track, isCurrentlyPlaying: Boolean) {
             .padding(horizontal = 24.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Track number or animated equalizer
+        // Fixed 28 dp width: shows zero-padded number normally, animated bars when playing
         Box(modifier = Modifier.width(28.dp), contentAlignment = Alignment.Center) {
             if (isCurrentlyPlaying) {
                 EqualizerBars()
             } else {
+                // padStart(2, '0') keeps single-digit numbers right-aligned: "01", "02" …
                 Text(
                     text = track.trackNumber.toString().padStart(2, '0'),
                     color = TextSecondary,
@@ -323,7 +431,7 @@ private fun TrackRow(track: Track, isCurrentlyPlaying: Boolean) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            // Featured artists: everyone beyond the primary album artist
+            // Featured artists: everyone beyond the primary album artist (index 0)
             val featured = track.artistNames.drop(1)
             if (featured.isNotEmpty()) {
                 Text(
@@ -334,7 +442,7 @@ private fun TrackRow(track: Track, isCurrentlyPlaying: Boolean) {
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            // Lyrics link
+            // Lyrics link — fires ACTION_VIEW with a Google search URL for the track + artist
             Text(
                 text = "View Lyrics",
                 color = TextSecondary.copy(alpha = 0.55f),
@@ -360,6 +468,16 @@ private fun TrackRow(track: Track, isCurrentlyPlaying: Boolean) {
 
 // ── Animated equalizer bars ────────────────────────────────────────────────────
 
+/**
+ * Three animated vertical bars that replace the static track number when a track is
+ * actively playing. Each bar oscillates between a min and max height fraction using
+ * [infiniteRepeatable] tweens with different durations (600 ms, 400 ms, 500 ms) so the
+ * bars never move in perfect unison, producing a natural equalizer appearance.
+ *
+ * Rendered at 14×14 dp to fit inside the 28 dp track-number column without clipping.
+ *
+ * @param modifier Optional modifier applied to the root [Row].
+ */
 @Composable
 private fun EqualizerBars(modifier: Modifier = Modifier) {
     val transition = rememberInfiniteTransition(label = "eq")
@@ -397,6 +515,23 @@ private fun EqualizerBars(modifier: Modifier = Modifier) {
 
 // ── About section ──────────────────────────────────────────────────────────────
 
+/**
+ * Displays supplementary album metadata below the tracklist: genre chips, record label,
+ * total track count, and full release date.
+ *
+ * **Genre chips — [LazyRow]**: Genres are rendered as horizontally scrollable pill-shaped
+ * chips using [LazyRow] instead of a wrapped [Row]. Album genre lists from Spotify are
+ * typically short (1–5 items), but [LazyRow] is preferred because it avoids measuring all
+ * chip widths up-front and allows horizontal overflow without clipping on narrow screens.
+ * Each genre string has its first character uppercased for consistent capitalisation since
+ * Spotify returns genres in lowercase (e.g. "indie rock" → "Indie rock").
+ *
+ * Sections with empty data ([Album.genres], [Album.label]) are suppressed entirely rather
+ * than showing empty or placeholder rows, keeping the UI clean for albums with incomplete
+ * metadata.
+ *
+ * @param album The [Album] domain object whose metadata is displayed.
+ */
 @Composable
 private fun AboutSection(album: Album) {
     Column(
@@ -405,10 +540,12 @@ private fun AboutSection(album: Album) {
             .padding(horizontal = 24.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Genre chips — LazyRow allows horizontal scrolling if chip list overflows the width
         if (album.genres.isNotEmpty()) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(album.genres) { genre ->
                     Text(
+                        // Spotify returns genres in lowercase; capitalise the first letter
                         text = genre.replaceFirstChar { it.uppercase() },
                         color = TextSecondary,
                         fontSize = 12.sp,
@@ -420,6 +557,7 @@ private fun AboutSection(album: Album) {
             }
         }
 
+        // Label is omitted entirely when empty (some Spotify releases have no label data)
         if (album.label.isNotEmpty()) {
             LabeledValue(label = "Label", value = album.label)
         }
@@ -433,6 +571,16 @@ private fun AboutSection(album: Album) {
     }
 }
 
+/**
+ * A two-line block showing a small secondary [label] above a larger primary [value].
+ *
+ * Used inside [AboutSection] for consistent styling of metadata fields (Label, Total tracks,
+ * Release date). The visual hierarchy — small grey label on top, larger white value below —
+ * follows the convention of form-field labels in iOS / Material Design settings screens.
+ *
+ * @param label The descriptor for the field (e.g. "Label", "Release date").
+ * @param value The data value to display below the label.
+ */
 @Composable
 private fun LabeledValue(label: String, value: String) {
     Column {
@@ -444,10 +592,29 @@ private fun LabeledValue(label: String, value: String) {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+/**
+ * Builds a Google search URL for the given [trackName] and [artistName] that will return
+ * lyrics results at the top of the search page.
+ *
+ * The query string is formatted as `"<trackName> <artistName> lyrics"` with spaces
+ * replaced by `+` to produce a valid URL query parameter. Using a Google search URL keeps
+ * the implementation dependency-free and surfaces lyrics from multiple providers
+ * (Genius, AZLyrics, etc.) without requiring a lyrics API key.
+ *
+ * @param trackName  The title of the track.
+ * @param artistName The primary artist of the track.
+ * @return A fully-formed Google search URL string.
+ */
 private fun lyricsSearchUrl(trackName: String, artistName: String): String =
     "https://www.google.com/search?q=" +
     "$trackName $artistName lyrics".trim().replace(" ", "+")
 
+/**
+ * Converts a track duration in milliseconds to a `"m:ss"` display string.
+ *
+ * @param durationMs Track length in milliseconds as returned by the Spotify API.
+ * @return Formatted string, e.g. `"3:45"` or `"12:04"`.
+ */
 private fun formatDuration(durationMs: Int): String {
     val totalSec = durationMs / 1000
     val min = totalSec / 60
@@ -455,6 +622,18 @@ private fun formatDuration(durationMs: Int): String {
     return "$min:${sec.toString().padStart(2, '0')}"
 }
 
+/**
+ * Calculates and formats the total playback duration of all tracks in the list.
+ *
+ * Uses [Long] arithmetic to avoid integer overflow for albums with many long tracks
+ * (e.g. a 20-track album where each track is ~5 min exceeds [Int.MAX_VALUE] milliseconds
+ * only at extreme edge cases, but [Long] is used defensively).
+ *
+ * Returns `"Xh Ym"` for albums over 60 minutes, or `"Ym"` for shorter ones.
+ *
+ * @param tracks The list of [Track] objects whose [Track.durationMs] values are summed.
+ * @return Human-readable total duration string, e.g. `"47m"` or `"1h 12m"`.
+ */
 private fun formatTotalDuration(tracks: List<Track>): String {
     val totalMs = tracks.sumOf { it.durationMs.toLong() }
     val totalMin = totalMs / 60_000
