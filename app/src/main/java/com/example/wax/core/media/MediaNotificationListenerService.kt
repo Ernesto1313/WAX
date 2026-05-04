@@ -30,16 +30,41 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class MediaNotificationListenerService : NotificationListenerService() {
 
+    /** Hilt-injected repository; receives track metadata and playback state updates. */
     @Inject lateinit var mediaSessionRepository: MediaSessionRepository
 
+    /** System service used to enumerate active media sessions and register a change listener. */
     private var sessionManager: MediaSessionManager? = null
+
+    /**
+     * All [MediaController] instances to which [mediaCallback] is currently registered.
+     * Kept as a list so they can be bulk-unregistered in [clearControllers] before
+     * re-subscribing to a fresh set of sessions.
+     */
     private val registeredControllers = mutableListOf<MediaController>()
+
+    /**
+     * Guards against calling [unregisterReceiver] when [screenEventReceiver] was never
+     * registered, which would throw an [IllegalArgumentException].
+     */
     private var receiverRegistered = false
 
     // ── Screen-event receiver ─────────────────────────────────────────────────
     // ACTION_SCREEN_OFF  → screen turned off while playing → show lock screen overlay
     // ACTION_USER_PRESENT → user swiped past keyguard       → dismiss the overlay
 
+    /**
+     * [BroadcastReceiver] that listens for screen-off and unlock events to manage the
+     * lock-screen turntable overlay.
+     *
+     * - [Intent.ACTION_SCREEN_OFF]: if Spotify is actively playing when the screen turns off,
+     *   [LockScreenActivity] is started so the turntable appears on the lock screen immediately.
+     * - [Intent.ACTION_USER_PRESENT]: fired when the user swipes past the keyguard; signals
+     *   [MediaSessionRepository.signalDismissLockScreen] so [LockScreenActivity] can finish.
+     *
+     * Registered in [onCreate] and unregistered in [onDestroy] using [receiverRegistered] as
+     * a guard against double-unregistration.
+     */
     private val screenEventReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
@@ -62,6 +87,11 @@ class MediaNotificationListenerService : NotificationListenerService() {
     // Fired by the OS whenever the set of active MediaSessions changes (app opened,
     // closed, moved to background, etc.). Re-runs the Spotify filter each time.
 
+    /**
+     * Listener registered with [MediaSessionManager] that re-evaluates the set of active
+     * Spotify sessions whenever the OS reports a change (e.g., Spotify is opened, closed, or
+     * moved to the background). Delegates to [refreshActiveSessions] on every invocation.
+     */
     private val sessionChangedListener =
         MediaSessionManager.OnActiveSessionsChangedListener { _ -> refreshActiveSessions() }
 
@@ -69,6 +99,16 @@ class MediaNotificationListenerService : NotificationListenerService() {
     // Attached only to the Spotify controller; callbacks are therefore always
     // Spotify-sourced.
 
+    /**
+     * Callback registered on the active Spotify [MediaController].
+     *
+     * - [onMetadataChanged]: called when the track changes; extracts title, artist, and album
+     *   from the new [android.media.MediaMetadata] and forwards them to [MediaSessionRepository.update].
+     * - [onPlaybackStateChanged]: called when Spotify pauses, plays, or stops; updates only the
+     *   [MediaSessionRepository] playback flag while preserving the previously stored metadata.
+     *
+     * Unregistered via [clearControllers] when sessions change or when the listener disconnects.
+     */
     private val mediaCallback = object : MediaController.Callback() {
         override fun onMetadataChanged(metadata: MediaMetadata?) {
             val title     = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
@@ -89,6 +129,12 @@ class MediaNotificationListenerService : NotificationListenerService() {
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
+    /**
+     * Registers [screenEventReceiver] to listen for [Intent.ACTION_SCREEN_OFF] and
+     * [Intent.ACTION_USER_PRESENT] broadcasts. [ContextCompat.RECEIVER_NOT_EXPORTED]
+     * restricts delivery to system broadcasts only, preventing other apps from spoofing
+     * these intents.
+     */
     override fun onCreate() {
         super.onCreate()
         ContextCompat.registerReceiver(
@@ -103,6 +149,10 @@ class MediaNotificationListenerService : NotificationListenerService() {
         receiverRegistered = true
     }
 
+    /**
+     * Unregisters [screenEventReceiver] if it was previously registered, guarded by
+     * [receiverRegistered] to prevent a crash from a double-unregister.
+     */
     override fun onDestroy() {
         if (receiverRegistered) {
             unregisterReceiver(screenEventReceiver)
@@ -111,6 +161,12 @@ class MediaNotificationListenerService : NotificationListenerService() {
         super.onDestroy()
     }
 
+    /**
+     * Called by the OS after the user grants notification listener access and the service
+     * is bound. Registers [sessionChangedListener] with [MediaSessionManager] and performs
+     * an initial [refreshActiveSessions] call so the repository is seeded with the current
+     * Spotify state immediately, without waiting for the next session-change event.
+     */
     override fun onListenerConnected() {
         val sm = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
         sessionManager = sm
@@ -121,6 +177,12 @@ class MediaNotificationListenerService : NotificationListenerService() {
         refreshActiveSessions()
     }
 
+    /**
+     * Called by the OS when the notification listener is revoked (e.g., the user disables
+     * notification access in Settings). Removes [sessionChangedListener], clears all
+     * registered [MediaController] callbacks, and resets the active controller in the
+     * repository so the UI reflects the disconnected state.
+     */
     override fun onListenerDisconnected() {
         sessionManager?.removeOnActiveSessionsChangedListener(sessionChangedListener)
         sessionManager = null
@@ -130,6 +192,15 @@ class MediaNotificationListenerService : NotificationListenerService() {
 
     // ── Session selection ─────────────────────────────────────────────────────
 
+    /**
+     * Queries [MediaSessionManager] for the current list of active sessions, selects the
+     * first one belonging to Spotify ([SPOTIFY_PACKAGE]), and attaches [mediaCallback] to it.
+     *
+     * If no Spotify session is found, [MediaSessionRepository.setActiveController] is called
+     * with `null` to reset the repository state. The initial metadata snapshot is read
+     * immediately after connecting so the UI reflects what is already playing without
+     * waiting for the next [android.media.MediaController.Callback] event.
+     */
     private fun refreshActiveSessions() {
         clearControllers()
         try {
@@ -162,13 +233,21 @@ class MediaNotificationListenerService : NotificationListenerService() {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    /**
+     * Unregisters [mediaCallback] from all controllers in [registeredControllers] and
+     * clears the list. Called before re-subscribing to a new set of sessions so that
+     * stale callbacks from previous sessions are never left dangling.
+     */
     private fun clearControllers() {
         registeredControllers.forEach { it.unregisterCallback(mediaCallback) }
         registeredControllers.clear()
     }
 
     companion object {
+        /** Log tag used for warning messages when session access is denied. */
         private const val TAG             = "MediaNotifListener"
+
+        /** Package name of the Spotify app; used to filter media sessions to Spotify only. */
         private const val SPOTIFY_PACKAGE = "com.spotify.music"
     }
 }
